@@ -1,6 +1,11 @@
 ﻿using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,6 +27,8 @@ namespace NanoCache.WebApiExample
             // Get Data
             if (reCache || !_memoryCache.TryGetValue("memory-cache-key", out string cachedData))
             {
+                Console.WriteLine("Memory Cache Value is empty");
+
                 // Set Memory Cache
                 cachedData = "Data from Memory Cache";
                 this._memoryCache.Set("memory-cache-key", cachedData, new MemoryCacheEntryOptions
@@ -39,12 +46,15 @@ namespace NanoCache.WebApiExample
             var cachedData = await _distributedCache.GetStringAsync("distributed-cache-key", ct);
             if (reCache || string.IsNullOrWhiteSpace(cachedData))
             {
+                Console.WriteLine("Distributed Cache Value is empty");
+
                 // Set Distributed Cache
                 cachedData = "Data from Distributed Cache";
                 await _distributedCache.SetStringAsync("distributed-cache-key", cachedData, new DistributedCacheEntryOptions
                 {
                     SlidingExpiration = TimeSpan.FromMinutes(15),
                 }, ct);
+                cachedData += " *****";
             }
 
             // Return

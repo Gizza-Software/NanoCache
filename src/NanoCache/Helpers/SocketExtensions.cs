@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace MarketMaker.Data.Extensions
+namespace NanoCache.Helpers
 {
     internal static class SocketExtensions
     {

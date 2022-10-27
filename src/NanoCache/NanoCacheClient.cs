@@ -1,5 +1,4 @@
-﻿using MarketMaker.Data.Extensions;
-using MessagePack;
+﻿using MessagePack;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using NanoCache.Enums;
@@ -56,6 +55,10 @@ namespace NanoCache
             _client.Reconnect = _options.Reconnect;
             _client.ReconnectDelayInSeconds = _options.ReconnectIntervalInSeconds;
             _client.NoDelay = true;
+            _client.KeepAlive = true;
+            _client.KeepAliveTime = 900;
+            _client.KeepAliveInterval = 300;
+            _client.KeepAliveRetryCount = 5;
             _client.OnConnected += Client_OnConnected;
             _client.OnDisconnected += Client_OnDisconnected;
             _client.OnDataReceived += Client_OnDataReceived;

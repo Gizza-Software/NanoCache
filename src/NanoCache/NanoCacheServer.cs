@@ -1,5 +1,4 @@
-﻿using MarketMaker.Data.Extensions;
-using MessagePack;
+﻿using MessagePack;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using NanoCache.Enums;
@@ -49,7 +48,7 @@ namespace NanoCache
             Task.Factory.StartNew(QueryConsumer, TaskCreationOptions.LongRunning);
 
             /* TCP Socket */
-            _listener = new TcpSharpSocketServer("0.0.0.0", port);
+            _listener = new TcpSharpSocketServer(port);
             _listener.OnStarted += Server_OnStarted;
             _listener.OnStopped += Server_OnStopped;
             _listener.OnConnected += Server_OnConnected;

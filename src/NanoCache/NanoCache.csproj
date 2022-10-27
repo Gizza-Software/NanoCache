@@ -8,10 +8,10 @@
 	<PropertyGroup>
 		<PackageId>NanoCache</PackageId>
 		<Authors>Burak Öner</Authors>
-		<Version>1.0.0</Version>
-		<FileVersion>1.0.0</FileVersion>
-		<PackageVersion>1.0.0</PackageVersion>
-		<AssemblyVersion>1.0.0</AssemblyVersion>
+		<Version>1.0.4</Version>
+		<FileVersion>1.0.4</FileVersion>
+		<PackageVersion>1.0.4</PackageVersion>
+		<AssemblyVersion>1.0.4</AssemblyVersion>
 		<Description>Faster Distributed Cache Solution, including Cache Server and Client with dependency injections</Description>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
 		<PackageTags>NanoCode;NanoCache;Cache;Server;Client;TCP;Socket;Dependency Injection</PackageTags>
@@ -19,7 +19,7 @@
 		<NeutralLanguage>en</NeutralLanguage>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageReleaseNotes>
-			Version 1.0.0 - 15 Oct 2022
+			Version 1.0.4 - 27 Oct 2022
 		</PackageReleaseNotes>
 		<PackageIconUrl />
 		<PackageProjectUrl>https://github.com/burakoner/NanoCache</PackageProjectUrl>
@@ -35,7 +35,7 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.2" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="6.0.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-		<PackageReference Include="TcpSharp" Version="1.0.1" />
+		<PackageReference Include="TcpSharp" Version="1.0.2" />
 	</ItemGroup>
 
 	<ItemGroup>
