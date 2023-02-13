@@ -1,117 +1,130 @@
-﻿#define CRC32
-
-using NanoCache.Security;
+﻿using NanoCache.Security;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NanoCache.Helpers
 {
+    public enum SocketSecurity
+    {
+        None = 0,
+        CRC16 = 1,
+        CRC32 = 2,
+    }
+
     internal static class SocketHelpers
     {
-        public static void CacheAndConsume(byte[] bytes, long connectionId, List<byte> bufferList, Action<byte[], long> ConsumeAction)
+        public static void CacheAndConsume(byte[] bytes, long connectionId, List<byte> buffer, Action<byte[], long> consumer)
         {
+            var security = SocketSecurity.CRC32;
+            var header = new byte[] { 0xF1, 0xF2 };
+
             try
             {
-                // Gelen verileri buffer'a ekle ve bu halini bufferArray olarak al. Sonrasında bufferı temizle
-                bufferList.AddRange(bytes);
-                var bufferArray = bufferList.ToArray();
-                // buffer.Clear();
+                // Gelen verileri buffer'a ekle ve bu halini "buff" olarak al. Sonrasında bufferı temizle
+                buffer.AddRange(bytes);
+                var buff = buffer.ToArray();
 
-                /*
-                 * Minimum paket uzunluğu 8 byte
-                 * SYNC     : 2 Bytes
-                 * Length   : 2 Bytes
-                 * Data Type: 1 Byte
-                 * Content  : 1 Byte (Minimum)
-                 * CRC16    : 2 Bytes
-                 * CRC32    : 4 Bytes
-                 */
-#if CRC16
-                var crcLength = 2;
-#elif CRC32
-                var crcLength = 4;
-#endif
-                if (bufferArray.Length >= crcLength + 5 + 1)
+                // Minimum paket uzunluğu 8 byte
+                // * SYNC     : 2 Bytes
+                // * Length   : 2 Bytes
+                // * Data Type: 1 Byte
+                // * Content  : 1 Byte(Minimum)
+                // * CRC16    : 2 Bytes
+                // * CRC32    : 4 Bytes
+
+                var crcLength = 0;
+                var syncLength = header.Length;
+                var lengthLength = 2;
+                var dataTypeLength = 1;
+                var minimumDataLength = 1;
+                var minimumPacketLength = syncLength + lengthLength + dataTypeLength + crcLength + minimumDataLength;
+                if (security == SocketSecurity.CRC16) crcLength = 2;
+                else if (security == SocketSecurity.CRC32) crcLength = 4;
+
+                if (buff.Length >= minimumPacketLength)
                 {
-                    var indexOf = IndexOf<byte>(bufferArray, 0xF1, 0xF2);
-                    if (indexOf == -1) bufferList.Clear();
-
-                    // if (bufferArray[0] == 0xF1 && bufferArray[1] == 0xF2) // SYNC Bytes
+                    var indexOf = buff.IndexOf(header);
+                    if (indexOf == -1) buffer.Clear();
                     else if (indexOf == 0) // SYNC Bytes
                     {
-                        var lenghtValue = BitConverter.ToUInt16(bufferArray, 2);
+                        // lenghtValue = Data Type (1) + Content (X)
+                        // lenghtValue CRC bytelarını kapsamıyor.
+                        var lenghtValue = BitConverter.ToUInt16(buff, lengthLength);
 
-                        // Paket yeterki kadar büyük mü? lenghtValue = Data Type (1) + Content (X)
+                        // Paket yeterki kadar büyük mü? 
                         // Paketin gereğinden fazla büyük olması sorun değil.
-                        // Pakcet Length CRC bytelarını kapsamıyor.
-                        var packetLength = 4 + crcLength + lenghtValue;
-                        if (bufferArray.Length >= packetLength)
+                        var packetLength = syncLength + lengthLength + lenghtValue + crcLength;
+                        if (buff.Length >= packetLength)
                         {
                             // CRC-Body'i ayarlayalım
                             var crcBody = new byte[lenghtValue];
-                            Array.Copy(bufferArray, 4, crcBody, 0, lenghtValue);
+                            var preBytesLength = syncLength + lengthLength;
+                            Array.Copy(buff, preBytesLength, crcBody, 0, lenghtValue);
 
                             // Check CRC & Consume
                             try
                             {
-#if CRC16
-                                if (CRC16.CheckCRC16(crcBody, bufferArray[lenghtValue + 4], bufferArray[lenghtValue + 5]))
-                                    ConsumeAction(crcBody, connectionId);
-#endif
-#if CRC32
-                                var crc32Bytes = new byte[] {
-                                    bufferArray[lenghtValue + 4],
-                                    bufferArray[lenghtValue + 5],
-                                    bufferArray[lenghtValue + 6],
-                                    bufferArray[lenghtValue + 7]
-                                };
-                                var crc32Value = BitConverter.ToUInt32(crc32Bytes, 0);
-                                if (CRC32.CheckCRC32(crcBody, crc32Value))
-                                    ConsumeAction(crcBody, connectionId);
-#endif
+                                // Check Point
+                                var consume = false;
+                                if (security == SocketSecurity.None)
+                                {
+                                    consume = true;
+                                }
+                                else if (security == SocketSecurity.CRC16)
+                                {
+                                    var crcBytes = new byte[crcLength];
+                                    Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
+                                    var crcValue = BitConverter.ToUInt16(crcBytes, 0);
+                                    consume = CRC16.CheckChecksum(crcBody, crcValue);
+                                }
+                                else if (security == SocketSecurity.CRC32)
+                                {
+                                    var crcBytes = new byte[crcLength];
+                                    Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
+                                    var crcValue = BitConverter.ToUInt32(crcBytes, 0);
+                                    consume = CRC32.CheckChecksum(crcBody, crcValue);
+                                }
+
+                                // Consume
+                                if (consume)
+                                {
+                                    consumer(crcBody, connectionId);
+                                }
                             }
                             catch { }
 
                             // Consume edilen veriyi buffer'dan at
-                            var currentLenght = bufferList.Count;
-                            bufferList.RemoveRange(0, packetLength);
+                            var bufferLength = buffer.Count;
+                            buffer.RemoveRange(0, packetLength);
 
                             // Arta kalanları veri için bu methodu yeniden çalıştır
-                            if (currentLenght > packetLength)
-                                CacheAndConsume(Array.Empty<byte>(), connectionId, bufferList, ConsumeAction);
+                            if (bufferLength > packetLength)
+                                CacheAndConsume(Array.Empty<byte>(), connectionId, buffer, consumer);
                         }
                     }
-
                     else
                     {
-                        bufferList.RemoveRange(0, indexOf);
-                        CacheAndConsume(Array.Empty<byte>(), connectionId, bufferList, ConsumeAction);
+                        buffer.RemoveRange(0, indexOf);
+                        CacheAndConsume(Array.Empty<byte>(), connectionId, buffer, consumer);
                     }
                 }
             }
             catch { }
         }
 
-        static int IndexOf<T>(T[] source, T search01, T search02)
-        {
-            var index = -1;
-            for (var i = 0; i < source.Length - 1; i++)
-            {
-                if (source[i].Equals(search01) && source[i + 1].Equals(search02))
-                {
-                    index = i;
-                    break;
-                }
-            }
-            return index;
-        }
 
-        public static int IndexOf<T>(List<T> source, T search01, T search02)
+        public static int IndexOf<T>(this IEnumerable<T> source, IEnumerable<T> search)
         {
             var index = -1;
-            for (var i = 0; i < source.Count - 1; i++)
+            for (var i = 0; i <= source.Count() - search.Count(); i++)
             {
-                if (source[i].Equals(search01) && source[i + 1].Equals(search02))
+                var matched = true;
+                for (var j = 0; j < search.Count(); j++)
+                {
+                    matched = matched && source.ElementAt(i + j).Equals(search.ElementAt(j));
+                }
+                if (matched)
                 {
                     index = i;
                     break;

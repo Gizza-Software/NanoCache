@@ -52,7 +52,7 @@ namespace NanoCache.Helpers
             */
 
             // CRC32: 4 Bytes
-            var crc32 = CRC32.ComputeCRC32(crcBytes);
+            var crc32 = CRC32.ComputeChecksum(crcBytes);
             list.AddRange(crc32.ToByteList());
 
             // ToArray
