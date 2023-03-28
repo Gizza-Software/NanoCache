@@ -9,7 +9,7 @@ public enum SocketSecurity
 
 internal static class SocketHelpers
 {
-    public static void CacheAndConsume(byte[] bytes, long connectionId, List<byte> buffer, Action<byte[], long> consumer)
+    public static void CacheAndConsume(byte[] bytes, string connectionId, List<byte> buffer, Action<byte[], string> consumer)
     {
         var security = SocketSecurity.CRC32;
         var header = new byte[] { 0xF1, 0xF2 };
@@ -30,7 +30,7 @@ internal static class SocketHelpers
 
             var crcLength = 0;
             var syncLength = header.Length;
-            var lengthLength = 2;
+            var lengthLength = 4;
             var dataTypeLength = 1;
             var minimumDataLength = 1;
             var minimumPacketLength = syncLength + lengthLength + dataTypeLength + crcLength + minimumDataLength;
@@ -45,7 +45,7 @@ internal static class SocketHelpers
                 {
                     // lenghtValue = Data Type (1) + Content (X)
                     // lenghtValue CRC bytelarını kapsamıyor.
-                    var lenghtValue = BitConverter.ToUInt16(buff, lengthLength);
+                    var lenghtValue = BitConverter.ToInt32(buff, syncLength);
 
                     // Paket yeterki kadar büyük mü? 
                     // Paketin gereğinden fazla büyük olması sorun değil.
@@ -87,7 +87,10 @@ internal static class SocketHelpers
                                 consumer(crcBody, connectionId);
                             }
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            var a = ex;
+                        }
 
                         // Consume edilen veriyi buffer'dan at
                         var bufferLength = buffer.Count;
@@ -95,7 +98,9 @@ internal static class SocketHelpers
 
                         // Arta kalanları veri için bu methodu yeniden çalıştır
                         if (bufferLength > packetLength)
+                        {
                             CacheAndConsume(Array.Empty<byte>(), connectionId, buffer, consumer);
+                        }
                     }
                 }
                 else
@@ -105,9 +110,11 @@ internal static class SocketHelpers
                 }
             }
         }
-        catch { }
+        catch(Exception ex) 
+        {
+            var a = ex;
+        }
     }
-
 
     public static int IndexOf<T>(this IEnumerable<T> source, IEnumerable<T> search)
     {

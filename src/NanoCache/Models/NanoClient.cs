@@ -3,13 +3,14 @@
 internal class NanoClient
 {
     public bool LoggedIn { get; set; }
-    public long ConnectionId { get; set; }
+    public string ConnectionId { get; set; }
     public NanoUserOptions Options { get; set; }
 
-    public NanoClient(bool loggedIn, long connectionId)
+    public NanoClient(bool loggedIn, string connectionId)
     {
         this.LoggedIn = loggedIn;
         this.ConnectionId = connectionId;
+        this.Options = new NanoUserOptions();
     }
 
     public void Login(NanoUserOptions options)
@@ -20,7 +21,6 @@ internal class NanoClient
             Username = options.Username,
             Password = options.Password,
             Instance = options.Instance,
-            UseCompression = options.UseCompression,
             DefaultAbsoluteExpiration = options.DefaultAbsoluteExpiration,
             DefaultAbsoluteExpirationRelativeToNow = options.DefaultAbsoluteExpirationRelativeToNow,
             DefaultSlidingExpiration = options.DefaultSlidingExpiration,

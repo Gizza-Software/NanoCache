@@ -8,18 +8,18 @@
 	<PropertyGroup>
 		<PackageId>NanoCache</PackageId>
 		<Authors>Burak Öner</Authors>
-		<Version>1.1.0</Version>
-		<FileVersion>1.1.0</FileVersion>
-		<PackageVersion>1.1.0</PackageVersion>
-		<AssemblyVersion>1.1.0</AssemblyVersion>
-		<Description>Faster Distributed Cache Solution, including Cache Server and Client with dependency injections</Description>
+		<Version>1.2.0</Version>
+		<FileVersion>1.2.0</FileVersion>
+		<PackageVersion>1.2.0</PackageVersion>
+		<AssemblyVersion>1.2.0</AssemblyVersion>
+		<Description>Faster Distributed Cache Solution, including Cache Server and Client with dependency injections. Successfully tested up to 10K requests per second with a single client and up to 100K requests per second with multiple clients.</Description>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
-		<PackageTags>NanoCode;NanoCache;Cache;Server;Client;TCP;Socket;Dependency Injection</PackageTags>
+		<PackageTags>NanoCode;NanoCache;Memory;Distributed;Cache;Server;Client;TCP;Socket;Dependency Injection</PackageTags>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<NeutralLanguage>en</NeutralLanguage>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageReleaseNotes>
-			Version 1.1.0 - 05 Mar 2023
+			Version 1.2.0 - 29 Mar 2023
 		</PackageReleaseNotes>
 		<PackageIconUrl />
 		<PackageProjectUrl>https://github.com/burakoner/NanoCache</PackageProjectUrl>
@@ -28,14 +28,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="MessagePack" Version="2.4.59" />
 		<PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="7.0.1" />
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
-		<PackageReference Include="TcpSharp" Version="1.1.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="TcpSharp" Version="1.2.0" />
 	</ItemGroup>
 
 	<ItemGroup>

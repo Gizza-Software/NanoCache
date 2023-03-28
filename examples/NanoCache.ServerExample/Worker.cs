@@ -64,6 +64,7 @@ namespace NanoCache.ServerExample
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            this._cacheServer.StartListening();
             await Task.CompletedTask;
         }
     }

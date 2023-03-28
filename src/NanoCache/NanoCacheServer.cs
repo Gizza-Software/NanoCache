@@ -6,9 +6,10 @@ public sealed class NanoCacheServer
     private readonly IMemoryCache _cache;
 
     /* TCP Socket */
+    //private readonly Tcpserver _listener;
     private readonly TcpSharpSocketServer _listener;
-    private readonly ConcurrentDictionary<long, List<byte>> _buffers = new();
-    private readonly ConcurrentDictionary<long, NanoClient> _clients = new();
+    private readonly ConcurrentDictionary<string, List<byte>> _buffers = new();
+    private readonly ConcurrentDictionary<string, NanoClient> _clients = new();
 
     /* Security */
     private readonly bool _useCredentials;
@@ -32,6 +33,17 @@ public sealed class NanoCacheServer
         /* Query Comsumer Thread */
         Task.Factory.StartNew(QueryConsumer, TaskCreationOptions.LongRunning);
 
+        /* TCP Socket * /
+        _listener = new Tcpserver(nsoftwareKeygen.Generate(nsoftwareProduct.IPWorks).RuntimeKey);
+        _listener.Config("TcpNoDelay=true");
+        _listener.Config("InBufferSize=30000000");
+        _listener.OnDataIn += new Tcpserver.OnDataInHandler(Server_OnDataReceived);
+        _listener.OnReadyToSend += new Tcpserver.OnReadyToSendHandler(Server_OnConnected);
+        _listener.OnDisconnected += new Tcpserver.OnDisconnectedHandler(Server_OnDisconnected);
+        _listener.KeepAlive = true;
+        _listener.LocalPort = port;
+        /**/
+
         /* TCP Socket */
         _listener = new TcpSharpSocketServer(port);
         _listener.OnStarted += Server_OnStarted;
@@ -39,7 +51,19 @@ public sealed class NanoCacheServer
         _listener.OnConnected += Server_OnConnected;
         _listener.OnDisconnected += Server_OnDisconnected;
         _listener.OnDataReceived += Server_OnDataReceived;
-        _listener.StartListening();
+        /**/
+    }
+
+    public void StartListening()
+    {
+        if (_listener == null || !_listener.Listening)
+            _listener.StartListening();
+    }
+
+    public void StopListening()
+    {
+        if (_listener == null || _listener.Listening)
+            _listener.StopListening();
     }
 
     #region Query Manager
@@ -62,14 +86,12 @@ public sealed class NanoCacheServer
                 Console.WriteLine("Request Key         : " + item.Request.Key);
                 //var requestData = MessagePackSerializer.Deserialize<NanoUserOptions>(item.Request.Value, NanoConstants.MessagePackOptions);
                 //Console.WriteLine("Request Value       : " + JsonConvert.SerializeObject(requestData));
-                Console.WriteLine("Request Options     : " + JsonConvert.SerializeObject(item.Request.Options));
+                //Console.WriteLine("Request Options     : " + JsonConvert.SerializeObject(item.Request.Options));
             }
 
             if (item == null) continue;
             if (item.Client == null) continue;
             if (item.Request == null) continue;
-            var client = _listener.GetClient(item.ConnectionId);
-            if (client == null || !client.Connected) continue;
 
             switch (item.Request.Operation)
             {
@@ -112,13 +134,13 @@ public sealed class NanoCacheServer
             Value = new byte[1] { 0x01 },
             Success = true,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
     private void ResponseLogin(NanoWaitingRequest item)
     {
-        var requestData = MessagePackSerializer.Deserialize<NanoUserOptions>(item.Request.Value, NanoConstants.MessagePackOptions);
+        var requestData = BinaryHelpers.Deserialize<NanoUserOptions>(item.Request.Value);
         if (requestData == null)
         {
             ResponseFailure(item);
@@ -140,7 +162,7 @@ public sealed class NanoCacheServer
             Value = new byte[1] { 0x01 },
             Success = true,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
@@ -155,7 +177,7 @@ public sealed class NanoCacheServer
             Value = new byte[1] { 0x01 },
             Success = true,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
@@ -194,7 +216,7 @@ public sealed class NanoCacheServer
             Value = new byte[1] { 0x01 },
             Success = true,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
@@ -219,7 +241,7 @@ public sealed class NanoCacheServer
             Value = data,
             Success = true,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
@@ -244,7 +266,7 @@ public sealed class NanoCacheServer
             Value = new byte[1] { 0x01 },
             Success = true,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
@@ -269,7 +291,7 @@ public sealed class NanoCacheServer
             Value = new byte[1] { 0x01 },
             Success = true,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
@@ -283,37 +305,37 @@ public sealed class NanoCacheServer
             Value = new byte[1] { 0x00 },
             Success = false,
         };
-        var bytes = response.PrepareObjectToSend(item.Client.LoggedIn && item.Client.Options != null ? item.Client.Options.UseCompression : false);
+        var bytes = response.PrepareObjectToSend();
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
     private string InstanceKey(NanoWaitingRequest item)
     {
-        var key =
-            string.IsNullOrWhiteSpace(item.Client.Options.Instance)
+        return string.IsNullOrWhiteSpace(item.Client.Options.Instance)
             ? item.Request.Key
             : item.Client.Options.Instance + "." + item.Request.Key;
-        return key;
     }
     #endregion
 
-    #region NanoSocket Methods
-    private void Server_OnStarted(object sender, OnStartedEventArgs e)
+    #region TCP Socket Methods
+    private void Server_OnStarted(object sender, OnServerStartedEventArgs e)
     {
         Console.WriteLine("The Server has started.");
     }
 
-    private void Server_OnStopped(object sender, OnStoppedEventArgs e)
+    private void Server_OnStopped(object sender, OnServerStoppedEventArgs e)
     {
         Console.WriteLine("The Server has stopped.");
     }
 
-    private void Server_OnConnected(object sender, TcpSharp.Events.Server.OnConnectedEventArgs e)
+    // private void Server_OnConnected(object sender, TcpserverReadyToSendEventArgs e)
+    private void Server_OnConnected(object sender, OnServerConnectedEventArgs e)
     {
-        _clients[e.ConnectionId] = new NanoClient(!_useCredentials, e.ConnectionId);
+        _clients[e.ConnectionId] = new NanoClient(!_useCredentials, e.ConnectionId.ToString());
     }
 
-    private void Server_OnDisconnected(object sender, TcpSharp.Events.Server.OnDisconnectedEventArgs e)
+    // private void Server_OnDisconnected(object sender, TcpserverDisconnectedEventArgs e)
+    private void Server_OnDisconnected(object sender, OnServerDisconnectedEventArgs e)
     {
         if (_clients.ContainsKey(e.ConnectionId))
         {
@@ -321,30 +343,32 @@ public sealed class NanoCacheServer
         }
     }
 
-    private void Server_OnDataReceived(object sender, TcpSharp.Events.Server.OnDataReceivedEventArgs e)
+    // private void Server_OnDataReceived(object sender, TcpserverDataInEventArgs e)
+    private void Server_OnDataReceived(object sender, OnServerDataReceivedEventArgs e)
     {
         var buffer = _buffers.GetOrAdd(e.ConnectionId, new List<byte>());
-        SocketHelpers.CacheAndConsume(e.Data, e.ConnectionId, buffer, new Action<byte[], long>(PacketReceived));
+        SocketHelpers.CacheAndConsume(e.Data, e.ConnectionId, buffer, new Action<byte[], string>(PacketReceived));
     }
 
-    private void PacketReceived(byte[] bytes, long connectionId)
+    private void PacketReceived(byte[] bytes, string connectionId)
     {
 #if RELEASE
         try
         {
 #endif
-        if (bytes.Length < 2) return;
-        if (bytes[0] < 1 || bytes[0] > 14) return;
+        if (bytes.Length < 2)
+            return;
+        if (bytes[0] < 1 || bytes[0] > 14) 
+            return;
 
         var client = _clients[connectionId];
         var dataType = (NanoOperation)bytes[0];
         var dataBody = new byte[bytes.Length - 1];
         Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
 
-        var request = MessagePackSerializer.Deserialize<NanoRequest>(dataBody,
-            client.LoggedIn && client.Options != null && client.Options.UseCompression
-            ? NanoConstants.MessagePackOptionsWithCompression : NanoConstants.MessagePackOptions);
-        if (request == null) return;
+        var request = BinaryHelpers.Deserialize<NanoRequest>(dataBody);
+        if (request == null) 
+            return;
 
         // Add to DataStack
         NanoDataStack.Server.ClientRequests.TryAdd(new NanoWaitingRequest

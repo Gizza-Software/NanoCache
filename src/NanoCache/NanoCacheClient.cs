@@ -2,11 +2,12 @@
 
 public sealed class NanoCacheClient : IDistributedCache
 {
+    /* Session */
+    public bool Connected { get => _client.Connected; }
+    public bool Authenticated { get; private set; }
+
     /* Identifier */
     private long _identifier;
-
-    /* Session */
-    private bool _loggedIn;
 
     /* TCP Socket */
     private readonly TcpSharpSocketClient _client;
@@ -45,44 +46,66 @@ public sealed class NanoCacheClient : IDistributedCache
         _client.KeepAliveTime = 900;
         _client.KeepAliveInterval = 300;
         _client.KeepAliveRetryCount = 5;
-        _client.OnConnected += Client_OnConnected;
+        _client.OnConnected += Client_OnReadyToSend;
         _client.OnDisconnected += Client_OnDisconnected;
         _client.OnDataReceived += Client_OnDataReceived;
-        _client.Connect();
     }
 
-    #region NanoSocket Events
-    private void Client_OnConnected(object sender, TcpSharp.Events.Client.OnConnectedEventArgs e)
+    public void Connect()
     {
-        if (_client.Connected)
+        if (!Connected)
+            _client.Connect();
+    }
+
+    public void Disconnect()
+    {
+        if (_client == null || Connected)
+            _client.Disconnect();
+    }
+
+    public void Reconnect()
+    {
+        Disconnect();
+        Connect();
+    }
+
+    public void Authenticate()
+    {
+        this.Connect();
+    }
+
+    #region TCP Socket Events
+    private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
+    {
+        // Login
+        if (!this.Authenticated)
         {
             var loginModel = new NanoUserOptions
             {
                 Username = _options.Username,
                 Password = _options.Password,
                 Instance = _options.Instance,
-                UseCompression = _options.UseCompression,
                 DefaultAbsoluteExpiration = _options.DefaultAbsoluteExpiration,
                 DefaultAbsoluteExpirationRelativeToNow = _options.DefaultAbsoluteExpirationRelativeToNow,
                 DefaultSlidingExpiration = _options.DefaultSlidingExpiration
             };
 
-            var loginResponse =  Send(NanoOperation.Login, "", MessagePackSerializer.Serialize(loginModel, NanoConstants.MessagePackOptions));
-            this._loggedIn = loginResponse != null && loginResponse.Success;
+            var loginResponse = Send(NanoOperation.Login, "", BinaryHelpers.Serialize(loginModel));
+            this.Authenticated = loginResponse != null && loginResponse.Success;
         }
     }
 
-    private void Client_OnDisconnected(object sender, TcpSharp.Events.Client.OnDisconnectedEventArgs e)
+    private void Client_OnDisconnected(object sender, OnClientDisconnectedEventArgs e)
     {
-        this._loggedIn = false;
+        this.Authenticated = false;
     }
 
-    private void Client_OnDataReceived(object sender, TcpSharp.Events.Client.OnDataReceivedEventArgs e)
+    private void Client_OnDataReceived(object sender, OnClientDataReceivedEventArgs e)
     {
-        SocketHelpers.CacheAndConsume(e.Data, 0, _buffer, new Action<byte[], long>((bytes, connectionId) => { PacketReceived(bytes, connectionId); }));
+        SocketHelpers.CacheAndConsume(e.Data, "00000", _buffer, new Action<byte[], string>((bytes, connectionId) => { PacketReceived(bytes, connectionId); }));
     }
 
-    private void PacketReceived(byte[] bytes, long connectionId)
+    private void PacketReceived(byte[] bytes, string connectionId)
     {
 #if RELEASE
         try
@@ -97,7 +120,7 @@ public sealed class NanoCacheClient : IDistributedCache
         Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
 
         // Get Data
-        var response = MessagePackSerializer.Deserialize<NanoResponse>(dataBody, _options.UseCompression ? NanoConstants.MessagePackOptionsWithCompression : NanoConstants.MessagePackOptions);
+        var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
         if (response == null) return;
 
         // Set Value
@@ -118,10 +141,10 @@ public sealed class NanoCacheClient : IDistributedCache
     }
     #endregion
 
-    #region NanoSocket Methods
+    #region TCP Socket Methods
     private NanoResponse Send(NanoOperation operation, string key, byte[] value = null, NanoCacheEntryOptions options = null)
     {
-        return SendAsync(operation, key, value, options, default).Result;
+        return SendAsync(operation, key, value, options, default).GetAwaiter().GetResult();
     }
 
     private Task<NanoResponse> SendAsync(NanoOperation operation, string key, byte[] value = null, NanoCacheEntryOptions options = null, CancellationToken cancellationToken = default)
@@ -152,7 +175,7 @@ public sealed class NanoCacheClient : IDistributedCache
         });
 
         // Send
-        _client.SendBytes(req.PrepareObjectToSend(operation != NanoOperation.Login && _options.UseCompression));
+        _client.SendBytes(req.PrepareObjectToSend());
 
         // Return
         return tcs.Task;
@@ -184,8 +207,11 @@ public sealed class NanoCacheClient : IDistributedCache
                     NanoDataStack.Client.CacheServerResponseTimeouts.TryRemove(id, out _);
             }
 
+            // Disconnected?
+            // if (_options.Reconnect) Reconnect();
+
             // Wait for next turn
-            await Task.Delay(_options.QueryTimeoutInSeconds < 10 ? 100 : 1000, _timeoutCancellationToken);
+            await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000, _timeoutCancellationToken);
         }
     }
     #endregion
@@ -193,7 +219,8 @@ public sealed class NanoCacheClient : IDistributedCache
     #region IDistributedCache Methods
     public byte[] Get(string key)
     {
-        if (!this._loggedIn) return new byte[0];
+        Authenticate();
+        if (!this.Authenticated) return Array.Empty<byte>();
 
         var response = Send(NanoOperation.Get, key);
         if (response == null || !response.Success) return new byte[0];
@@ -202,40 +229,49 @@ public sealed class NanoCacheClient : IDistributedCache
     }
     public async Task<byte[]> GetAsync(string key, CancellationToken token = default)
     {
-        if (!this._loggedIn) return new byte[0];
+        Authenticate();
+        if (!this.Authenticated) return Array.Empty<byte>();
 
         var response = await SendAsync(NanoOperation.Get, key, null, null, token);
         if (response == null || !response.Success) return new byte[0];
 
         return response.Value;
     }
+
     public void Refresh(string key)
     {
-        if (!this._loggedIn) return;
+        Authenticate();
+        if (!this.Authenticated) return;
 
         Send(NanoOperation.Refresh, key);
     }
     public Task RefreshAsync(string key, CancellationToken token = default)
     {
-        if (!this._loggedIn) return Task.CompletedTask;
+        Authenticate();
+        if (!this.Authenticated) return Task.CompletedTask;
 
         return SendAsync(NanoOperation.Refresh, key, null, null, token);
     }
+
     public void Remove(string key)
     {
-        if (!this._loggedIn) return;
+        Authenticate();
+        if (!this.Authenticated) return;
 
         Send(NanoOperation.Remove, key);
     }
     public Task RemoveAsync(string key, CancellationToken token = default)
     {
-        if (!this._loggedIn) return Task.CompletedTask;
+        Authenticate();
+        if (!this.Authenticated) return Task.CompletedTask;
 
         return SendAsync(NanoOperation.Remove, key, null, null, token);
     }
+
     public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
     {
-        if (!this._loggedIn) return;
+        Authenticate();
+        if (!this.Authenticated) return;
 
         var nanoOptions = new NanoCacheEntryOptions();
         if (options != null)
@@ -249,7 +285,8 @@ public sealed class NanoCacheClient : IDistributedCache
     }
     public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
     {
-        if (!this._loggedIn) return Task.CompletedTask;
+        Authenticate();
+        if (!this.Authenticated) return Task.CompletedTask;
 
         var nanoOptions = new NanoCacheEntryOptions();
         if (options != null)

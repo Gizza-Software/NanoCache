@@ -2,15 +2,11 @@
 
 internal static class SocketExtensions
 {
-    public static byte[] PrepareObjectToSend(this NanoRequest @this, bool compress)
-        => MessagePackSerializer.Serialize(@this, compress
-            ? NanoConstants.MessagePackOptionsWithCompression
-            : NanoConstants.MessagePackOptions).PrepareBytesToSend((byte)@this.Operation);
+    public static byte[] PrepareObjectToSend(this NanoRequest @this)
+        => BinaryHelpers.Serialize(@this).PrepareBytesToSend((byte)@this.Operation);
 
-    public static byte[] PrepareObjectToSend(this NanoResponse @this, bool compress)
-        => MessagePackSerializer.Serialize(@this, compress
-            ? NanoConstants.MessagePackOptionsWithCompression
-            : NanoConstants.MessagePackOptions).PrepareBytesToSend((byte)@this.Operation);
+    public static byte[] PrepareObjectToSend(this NanoResponse @this)
+        => BinaryHelpers.Serialize(@this).PrepareBytesToSend((byte)@this.Operation);
 
     public static byte[] PrepareBytesToSend(this byte[] @this, byte dataType)
     {
@@ -19,8 +15,8 @@ internal static class SocketExtensions
         list.Add(0xF1);
         list.Add(0xF2);
 
-        // Length: 2 Bytes
-        var len = Convert.ToInt16(@this.Length + 1); // +1, SocketResponseDataType için
+        // Length: 4 Bytes
+        var len = @this.Length + 1; // +1, SocketResponseDataType için
         list.AddRange(len.ToByteList());
 
         // Data Type: 1 Byte
@@ -51,29 +47,14 @@ internal static class SocketExtensions
         return list.ToArray();
     }
 
-    public static byte[] ToBytes(this short @this)
-    {
-        var bytes = BitConverter.GetBytes(@this);
-        // if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
-        return bytes;
-    }
+    public static byte[] ToBytes(this short @this) => BitConverter.GetBytes(@this);
+    public static List<byte> ToByteList(this short @this) => @this.ToBytes().ToList();
+    
+    public static byte[] ToBytes(this int @this) => BitConverter.GetBytes(@this);
+    public static List<byte> ToByteList(this int @this)=> @this.ToBytes().ToList();
 
-    public static List<byte> ToByteList(this short @this)
-    {
-        return @this.ToBytes().ToList();
-    }
-
-    public static byte[] ToBytes(this uint @this)
-    {
-        var bytes = BitConverter.GetBytes(@this);
-        // if (BitConverter.IsLittleEndian) Array.Reverse(bytes);
-        return bytes;
-    }
-
-    public static List<byte> ToByteList(this uint @this)
-    {
-        return @this.ToBytes().ToList();
-    }
+    public static byte[] ToBytes(this uint @this) => BitConverter.GetBytes(@this);
+    public static List<byte> ToByteList(this uint @this) => @this.ToBytes().ToList();
 
     public static void AddRange<T>(this ConcurrentBag<T> @this, IEnumerable<T> toAdd)
     {
