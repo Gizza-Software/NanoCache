@@ -15,6 +15,9 @@ public sealed class NanoCacheServer
     private readonly bool _useCredentials;
     private readonly List<NanoUserCredentials> _validUsers;
 
+    /* Data Stack */
+    private NanoDataStackServer _serverDataStack;
+
     /* Debugging */
     private readonly bool _debugMode;
 
@@ -22,6 +25,9 @@ public sealed class NanoCacheServer
     {
         /* Memory Cache */
         _cache = cache;
+
+        // Data Stack
+        _serverDataStack = new  NanoDataStackServer();
 
         /* Security */
         _useCredentials = useCredentials;
@@ -69,7 +75,7 @@ public sealed class NanoCacheServer
     #region Query Manager
     private void QueryConsumer()
     {
-        foreach (var item in NanoDataStack.Server.ClientRequests.GetConsumingEnumerable())
+        foreach (var item in _serverDataStack.ClientRequests.GetConsumingEnumerable())
         {
 #if RELEASE
             try
@@ -371,7 +377,7 @@ public sealed class NanoCacheServer
             return;
 
         // Add to DataStack
-        NanoDataStack.Server.ClientRequests.TryAdd(new NanoWaitingRequest
+        _serverDataStack.ClientRequests.TryAdd(new NanoWaitingRequest
         {
             Client = client,
             Request = request,

@@ -8,18 +8,18 @@
 	<PropertyGroup>
 		<PackageId>NanoCache</PackageId>
 		<Authors>Burak Öner</Authors>
-		<Version>1.2.0</Version>
-		<FileVersion>1.2.0</FileVersion>
-		<PackageVersion>1.2.0</PackageVersion>
-		<AssemblyVersion>1.2.0</AssemblyVersion>
-		<Description>Faster Distributed Cache Solution, including Cache Server and Client with dependency injections. Successfully tested up to 10K requests per second with a single client and up to 100K requests per second with multiple clients.</Description>
+		<Version>1.2.1</Version>
+		<FileVersion>1.2.1</FileVersion>
+		<PackageVersion>1.2.1</PackageVersion>
+		<AssemblyVersion>1.2.1</AssemblyVersion>
+		<Description>Faster Distributed Cache Solution, including Cache Server and Client with dependency injections. Successfully tested up to 15K requests per second with a single client and up to 200K requests per second with multiple clients.</Description>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
 		<PackageTags>NanoCode;NanoCache;Memory;Distributed;Cache;Server;Client;TCP;Socket;Dependency Injection</PackageTags>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<NeutralLanguage>en</NeutralLanguage>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<PackageReleaseNotes>
-			Version 1.2.0 - 29 Mar 2023
+			Version 1.2.1 - 04 Apr 2023
 		</PackageReleaseNotes>
 		<PackageIconUrl />
 		<PackageProjectUrl>https://github.com/burakoner/NanoCache</PackageProjectUrl>

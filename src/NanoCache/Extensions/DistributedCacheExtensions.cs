@@ -25,8 +25,8 @@ public static class DistributedCacheExtensions
 
     public static void SetObject(this IDistributedCache cache, string key, object value, DistributedCacheEntryOptions options)
     {
-        if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
-        if (value == null) throw new ArgumentNullException(nameof(value));
+        if(key == null) throw new ArgumentNullException(nameof(key));
+        if(value == null) throw new ArgumentNullException(nameof(value));
 
         cache.Set(key, BinaryHelpers.Serialize(value), options);
     }
@@ -38,7 +38,7 @@ public static class DistributedCacheExtensions
 
     public static async Task SetObjectAsync(this IDistributedCache cache, string key, object value, DistributedCacheEntryOptions options, CancellationToken token = default(CancellationToken))
     {
-        if (string.IsNullOrEmpty(key)) throw new ArgumentNullException(nameof(key));
+        if (key == null) throw new ArgumentNullException(nameof(key));
         if (value == null) throw new ArgumentNullException(nameof(value));
 
         await cache.SetAsync(key, BinaryHelpers.Serialize(value), options, token).ConfigureAwait(false);
