@@ -1,4 +1,4 @@
-﻿namespace NanoCache.Helpers;
+﻿namespace NanoCache;
 
 internal static class SocketExtensions
 {
@@ -49,9 +49,9 @@ internal static class SocketExtensions
 
     public static byte[] ToBytes(this short @this) => BitConverter.GetBytes(@this);
     public static List<byte> ToByteList(this short @this) => @this.ToBytes().ToList();
-    
+
     public static byte[] ToBytes(this int @this) => BitConverter.GetBytes(@this);
-    public static List<byte> ToByteList(this int @this)=> @this.ToBytes().ToList();
+    public static List<byte> ToByteList(this int @this) => @this.ToBytes().ToList();
 
     public static byte[] ToBytes(this uint @this) => BitConverter.GetBytes(@this);
     public static List<byte> ToByteList(this uint @this) => @this.ToBytes().ToList();

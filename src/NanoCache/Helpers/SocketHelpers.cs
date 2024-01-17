@@ -1,4 +1,4 @@
-﻿namespace NanoCache.Helpers;
+﻿namespace NanoCache;
 
 public enum SocketSecurity
 {
@@ -9,14 +9,20 @@ public enum SocketSecurity
 
 internal static class SocketHelpers
 {
+    private static readonly object _lock = new();
+
     public static void CacheAndConsume(byte[] bytes, string connectionId, List<byte> buffer, Action<byte[], string> consumer)
     {
         var security = SocketSecurity.CRC32;
         var header = new byte[] { 0xF1, 0xF2 };
 
+#if RELEASE
         try
         {
-            // Gelen verileri buffer'a ekle ve bu halini "buff" olarak al. Sonrasında bufferı temizle
+#endif
+        // Gelen verileri buffer'a ekle ve bu halini "buff" olarak al. Sonrasında bufferı temizle
+        lock (_lock)
+        {
             buffer.AddRange(bytes);
             var buff = buffer.ToArray();
 
@@ -58,49 +64,46 @@ internal static class SocketHelpers
                         Array.Copy(buff, preBytesLength, crcBody, 0, lenghtValue);
 
                         // Check CRC & Consume
+#if RELEASE
                         try
                         {
-                            // Check Point
-                            var consume = false;
-                            if (security == SocketSecurity.None)
-                            {
-                                consume = true;
-                            }
-                            else if (security == SocketSecurity.CRC16)
-                            {
-                                var crcBytes = new byte[crcLength];
-                                Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
-                                var crcValue = BitConverter.ToUInt16(crcBytes, 0);
-                                consume = CRC16.CheckChecksum(crcBody, crcValue);
-                            }
-                            else if (security == SocketSecurity.CRC32)
-                            {
-                                var crcBytes = new byte[crcLength];
-                                Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
-                                var crcValue = BitConverter.ToUInt32(crcBytes, 0);
-                                consume = CRC32.CheckChecksum(crcBody, crcValue);
-                            }
-
-                            // Consume
-                            if (consume)
-                            {
-                                consumer(crcBody, connectionId);
-                            }
-                        }
-                        catch (Exception ex)
+#endif
+                        // Check Point
+                        var consume = false;
+                        if (security == SocketSecurity.None)
                         {
-                            var a = ex;
+                            consume = true;
                         }
+                        else if (security == SocketSecurity.CRC16)
+                        {
+                            var crcBytes = new byte[crcLength];
+                            Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
+                            var crcValue = BitConverter.ToUInt16(crcBytes, 0);
+                            consume = CRC16.CheckChecksum(crcBody, crcValue);
+                        }
+                        else if (security == SocketSecurity.CRC32)
+                        {
+                            var crcBytes = new byte[crcLength];
+                            Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
+                            var crcValue = BitConverter.ToUInt32(crcBytes, 0);
+                            consume = CRC32.CheckChecksum(crcBody, crcValue);
+                        }
+
+                        // Consume
+                        if (consume)
+                        {
+                            consumer(crcBody, connectionId);
+                        }
+#if RELEASE
+                        }
+                        catch { }
+#endif
 
                         // Consume edilen veriyi buffer'dan at
-                        var bufferLength = buffer.Count;
-                        buffer.RemoveRange(0, packetLength);
+                        if (buffer.Count >= packetLength) buffer.RemoveRange(0, packetLength);
 
                         // Arta kalanları veri için bu methodu yeniden çalıştır
-                        if (bufferLength > packetLength)
-                        {
-                            CacheAndConsume(Array.Empty<byte>(), connectionId, buffer, consumer);
-                        }
+                        if (buffer.Count > packetLength) CacheAndConsume([], connectionId, buffer, consumer);
                     }
                 }
                 else
@@ -110,10 +113,11 @@ internal static class SocketHelpers
                 }
             }
         }
-        catch(Exception ex) 
-        {
-            var a = ex;
+
+#if RELEASE
         }
+        catch { }
+#endif
     }
 
     public static int IndexOf<T>(this IEnumerable<T> source, IEnumerable<T> search)

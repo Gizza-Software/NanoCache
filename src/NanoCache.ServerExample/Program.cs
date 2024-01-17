@@ -1,8 +1,3 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using NanoCache.ServerExample;
-
 IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureServices(services =>
     {

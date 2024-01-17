@@ -10,11 +10,11 @@ public sealed class NanoCacheClient : IDistributedCache
     private long _identifier;
 
     /* TCP Socket */
-    private readonly TcpSharpSocketClient _client;
-    private readonly List<byte> _buffer = new();
+    private TcpSharpSocketClient _client;
+    private List<byte> _buffer = [];
 
     /* Distributed Cache Options */
-    private readonly NanoCacheOptions _options;
+    private NanoCacheOptions _options;
 
     /* Data Stack */
     private NanoDataStackClient _clientDataStack;
@@ -31,19 +31,28 @@ public sealed class NanoCacheClient : IDistributedCache
 
     public NanoCacheClient(NanoCacheOptions options)
     {
-        /* Options */
-        _options = options;
+        // Configure
+        Configure(options);
 
         // Data Stack
         _clientDataStack = new NanoDataStackClient();
 
-        /* Timeout Manager */
+        // Timeout Manager
         _timeoutCancellationTokenSource = new CancellationTokenSource();
         _timeoutCancellationToken = _timeoutCancellationTokenSource.Token;
-        _timeoutThread = new Thread(async () => await TimeoutAction());
+        _timeoutThread = new Thread(async () => await TimeoutActionAsync());
         _timeoutThread.Start();
+    }
 
-        /* TCP Socket */
+    public void Configure(NanoCacheOptions options)
+    {
+        // Options
+        _options = options;
+
+        // Buffer
+        _buffer = new List<byte>();
+
+        // TCP Socket
         _client = new TcpSharpSocketClient(_options.CacheServerHost, _options.CacheServerPort);
         _client.Reconnect = _options.Reconnect;
         _client.ReconnectDelayInSeconds = _options.ReconnectIntervalInSeconds;
@@ -66,7 +75,7 @@ public sealed class NanoCacheClient : IDistributedCache
     public void Disconnect()
     {
         if (_client == null || Connected)
-            _client.Disconnect();
+            _client!.Disconnect();
     }
 
     public void Reconnect()
@@ -100,6 +109,8 @@ public sealed class NanoCacheClient : IDistributedCache
             };
 
             var loginResponse = Send(NanoOperation.Login, "", BinaryHelpers.Serialize(loginModel));
+            if (loginResponse == null || !loginResponse.Success) throw new InvalidOperationException("Invalid credentials or connection timed out");
+
             this.Authenticated = loginResponse != null && loginResponse.Success;
         }
     }
@@ -111,7 +122,7 @@ public sealed class NanoCacheClient : IDistributedCache
 
     private void Client_OnDataReceived(object sender, OnClientDataReceivedEventArgs e)
     {
-        SocketHelpers.CacheAndConsume(e.Data, "00000", _buffer, new Action<byte[], string>((bytes, connectionId) => { PacketReceived(bytes, connectionId); }));
+        SocketHelpers.CacheAndConsume(e.Data, "CLIENT", _buffer, new Action<byte[], string>((bytes, connectionId) => { PacketReceived(bytes, connectionId); }));
     }
 
     private void PacketReceived(byte[] bytes, string connectionId)
@@ -120,29 +131,29 @@ public sealed class NanoCacheClient : IDistributedCache
         try
         {
 #endif
-        if (bytes.Length < 2) return;
-        if (bytes[0] < 1 || bytes[0] > 14) return;
+            if (bytes.Length < 2) return;
+            if (bytes[0] < 1 || bytes[0] > 14) return;
 
-        // Parse Bytes
-        var dataType = (NanoOperation)bytes[0];
-        var dataBody = new byte[bytes.Length - 1];
-        Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
+            // Parse Bytes
+            var dataType = (NanoOperation)bytes[0];
+            var dataBody = new byte[bytes.Length - 1];
+            Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
 
-        // Get Data
-        var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
-        if (response == null) return;
+            // Get Data
+            var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
+            if (response == null) return;
 
-        // Set Value
-        if (_clientDataStack.CacheServerResponseCallbacks.ContainsKey(response.Identifier))
-            _clientDataStack.CacheServerResponseCallbacks[response.Identifier].TrySetResult(response);
+            // Set Value
+            if (_clientDataStack.CacheServerResponseCallbacks.ContainsKey(response.Identifier))
+                _clientDataStack.CacheServerResponseCallbacks[response.Identifier].TrySetResult(response);
 
-        // Remove Request
-        if (_clientDataStack.CacheServerRequests.ContainsKey(response.Identifier))
-            _clientDataStack.CacheServerRequests.TryRemove(response.Identifier, out _);
+            // Remove Request
+            if (_clientDataStack.CacheServerRequests.ContainsKey(response.Identifier))
+                _clientDataStack.CacheServerRequests.TryRemove(response.Identifier, out _);
 
-        // Remove Timeout
-        if (_clientDataStack.CacheServerResponseTimeouts.ContainsKey(response.Identifier))
-            _clientDataStack.CacheServerResponseTimeouts.TryRemove(response.Identifier, out _);
+            // Remove Timeout
+            if (_clientDataStack.CacheServerResponseTimeouts.ContainsKey(response.Identifier))
+                _clientDataStack.CacheServerResponseTimeouts.TryRemove(response.Identifier, out _);
 #if RELEASE
         }
         catch { }
@@ -192,7 +203,7 @@ public sealed class NanoCacheClient : IDistributedCache
     #endregion
 
     #region Timeout Methods
-    private async Task TimeoutAction()
+    private async Task TimeoutActionAsync()
     {
         while (!_timeoutCancellationToken.IsCancellationRequested)
         {
@@ -206,7 +217,7 @@ public sealed class NanoCacheClient : IDistributedCache
                         Success = false,
                         Identifier = id,
                         Operation = NanoOperation.Timeout,
-                        Value = new byte[0]
+                        Value = Array.Empty<byte>()
                     });
 
                 if (_clientDataStack.CacheServerRequests.ContainsKey(id))
@@ -232,7 +243,7 @@ public sealed class NanoCacheClient : IDistributedCache
         if (!this.Authenticated) return Array.Empty<byte>();
 
         var response = Send(NanoOperation.Get, key);
-        if (response == null || !response.Success) return new byte[0];
+        if (response == null || !response.Success) return Array.Empty<byte>();
 
         return response.Value;
     }
@@ -242,7 +253,7 @@ public sealed class NanoCacheClient : IDistributedCache
         if (!this.Authenticated) return Array.Empty<byte>();
 
         var response = await SendAsync(NanoOperation.Get, key, null, null, token);
-        if (response == null || !response.Success) return new byte[0];
+        if (response == null || !response.Success) return Array.Empty<byte>();
 
         return response.Value;
     }

@@ -8,15 +8,15 @@ public sealed class NanoCacheServer
     /* TCP Socket */
     //private readonly Tcpserver _listener;
     private readonly TcpSharpSocketServer _listener;
-    private readonly ConcurrentDictionary<string, List<byte>> _buffers = new();
-    private readonly ConcurrentDictionary<string, NanoClient> _clients = new();
+    private readonly ConcurrentDictionary<string, List<byte>> _buffers = [];
+    private readonly ConcurrentDictionary<string, NanoClient> _clients = [];
 
     /* Security */
     private readonly bool _useCredentials;
     private readonly List<NanoUserCredentials> _validUsers;
 
     /* Data Stack */
-    private NanoDataStackServer _serverDataStack;
+    private readonly NanoDataStackServer _serverDataStack;
 
     /* Debugging */
     private readonly bool _debugMode;
@@ -27,7 +27,7 @@ public sealed class NanoCacheServer
         _cache = cache;
 
         // Data Stack
-        _serverDataStack = new  NanoDataStackServer();
+        _serverDataStack = new NanoDataStackServer();
 
         /* Security */
         _useCredentials = useCredentials;
@@ -63,71 +63,75 @@ public sealed class NanoCacheServer
     public void StartListening()
     {
         if (_listener == null || !_listener.Listening)
-            _listener.StartListening();
+            _listener!.StartListening();
     }
 
     public void StopListening()
     {
         if (_listener == null || _listener.Listening)
-            _listener.StopListening();
+            _listener!.StopListening();
     }
 
     #region Query Manager
     private void QueryConsumer()
     {
+#if RELEASE
+            try
+            {
+#endif
         foreach (var item in _serverDataStack.ClientRequests.GetConsumingEnumerable())
         {
 #if RELEASE
             try
             {
 #endif
-            if (_debugMode)
-            {
-                Console.WriteLine("----------------------------------------------------------------------------------------------------");
-                Console.WriteLine("New Request");
-                Console.WriteLine("Client Connection Id: " + item.Client.ConnectionId);
-                Console.WriteLine("Client Logged In    : " + item.Client.LoggedIn);
-                Console.WriteLine("Request Identifier  : " + item.Request.Identifier);
-                Console.WriteLine("Request Operation   : " + item.Request.Operation.ToString());
-                Console.WriteLine("Request Key         : " + item.Request.Key);
-                //var requestData = MessagePackSerializer.Deserialize<NanoUserOptions>(item.Request.Value, NanoConstants.MessagePackOptions);
-                //Console.WriteLine("Request Value       : " + JsonConvert.SerializeObject(requestData));
-                //Console.WriteLine("Request Options     : " + JsonConvert.SerializeObject(item.Request.Options));
-            }
+                if (_debugMode)
+                {
+                    Console.WriteLine("----------------------------------------------------------------------------------------------------");
+                    Console.WriteLine("Client Connection Id: " + item.Client.ConnectionId);
+                    Console.WriteLine("Client Logged In    : " + item.Client.LoggedIn);
+                    Console.WriteLine("Request Identifier  : " + item.Request.Identifier);
+                    Console.WriteLine("Request Operation   : " + item.Request.Operation.ToString());
+                    Console.WriteLine("Request Key         : " + item.Request.Key);
+                }
 
-            if (item == null) continue;
-            if (item.Client == null) continue;
-            if (item.Request == null) continue;
+                if (item == null) continue;
+                if (item.Client == null) continue;
+                if (item.Request == null) continue;
 
-            switch (item.Request.Operation)
-            {
-                case NanoOperation.Ping:
-                    ResponsePing(item);
-                    break;
-                case NanoOperation.Login:
-                    ResponseLogin(item);
-                    break;
-                case NanoOperation.Logout:
-                    ResponseLogout(item);
-                    break;
-                case NanoOperation.Set:
-                    ResponseSet(item);
-                    break;
-                case NanoOperation.Get:
-                    ResponseGet(item);
-                    break;
-                case NanoOperation.Refresh:
-                    ResponseRefresh(item);
-                    break;
-                case NanoOperation.Remove:
-                    ResponseRemove(item);
-                    break;
-            }
+                switch (item.Request.Operation)
+                {
+                    case NanoOperation.Ping:
+                        ResponsePing(item);
+                        break;
+                    case NanoOperation.Login:
+                        ResponseLogin(item);
+                        break;
+                    case NanoOperation.Logout:
+                        ResponseLogout(item);
+                        break;
+                    case NanoOperation.Set:
+                        ResponseSet(item);
+                        break;
+                    case NanoOperation.Get:
+                        ResponseGet(item);
+                        break;
+                    case NanoOperation.Refresh:
+                        ResponseRefresh(item);
+                        break;
+                    case NanoOperation.Remove:
+                        ResponseRemove(item);
+                        break;
+                }
 #if RELEASE
             }
             catch { }
 #endif
         }
+#if RELEASE
+            }
+            catch { }
+#endif
     }
 
     private void ResponsePing(NanoWaitingRequest item)
@@ -211,7 +215,8 @@ public sealed class NanoCacheServer
         }
 
         // Action
-        this._cache.Set(InstanceKey(item), item.Request.Value, options);
+        // var json = Encoding.UTF8.GetString(item.Request.Value);
+        this._cache.Set(CacheKey(item), item.Request.Value, options);
 
         // Response
         var response = new NanoResponse
@@ -236,7 +241,7 @@ public sealed class NanoCacheServer
         }
 
         // Action
-        var data = this._cache.Get<byte[]>(InstanceKey(item));
+        var data = this._cache.Get<byte[]>(CacheKey(item));
 
         // Response
         var response = new NanoResponse
@@ -261,7 +266,7 @@ public sealed class NanoCacheServer
         }
 
         // Action
-        _ = this._cache.Get<byte[]>(InstanceKey(item));
+        _ = this._cache.Get<byte[]>(CacheKey(item));
 
         // Response
         var response = new NanoResponse
@@ -286,7 +291,7 @@ public sealed class NanoCacheServer
         }
 
         // Action
-        this._cache.Remove(InstanceKey(item));
+        this._cache.Remove(CacheKey(item));
 
         // Response
         var response = new NanoResponse
@@ -315,7 +320,7 @@ public sealed class NanoCacheServer
         _listener.SendBytes(item.ConnectionId, bytes);
     }
 
-    private string InstanceKey(NanoWaitingRequest item)
+    private string CacheKey(NanoWaitingRequest item)
     {
         return string.IsNullOrWhiteSpace(item.Client.Options.Instance)
             ? item.Request.Key
@@ -362,27 +367,27 @@ public sealed class NanoCacheServer
         try
         {
 #endif
-        if (bytes.Length < 2)
-            return;
-        if (bytes[0] < 1 || bytes[0] > 14) 
-            return;
+            if (bytes.Length < 2)
+                return;
+            if (bytes[0] < 1 || bytes[0] > 14)
+                return;
 
-        var client = _clients[connectionId];
-        var dataType = (NanoOperation)bytes[0];
-        var dataBody = new byte[bytes.Length - 1];
-        Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
+            var client = _clients[connectionId];
+            var dataType = (NanoOperation)bytes[0];
+            var dataBody = new byte[bytes.Length - 1];
+            Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
 
-        var request = BinaryHelpers.Deserialize<NanoRequest>(dataBody);
-        if (request == null) 
-            return;
+            var request = BinaryHelpers.Deserialize<NanoRequest>(dataBody);
+            if (request == null)
+                return;
 
-        // Add to DataStack
-        _serverDataStack.ClientRequests.TryAdd(new NanoWaitingRequest
-        {
-            Client = client,
-            Request = request,
-            ConnectionId = connectionId,
-        });
+            // Add to DataStack
+            _serverDataStack.ClientRequests.TryAdd(new NanoWaitingRequest
+            {
+                Client = client,
+                Request = request,
+                ConnectionId = connectionId,
+            });
 #if RELEASE
         }
         catch { }

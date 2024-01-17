@@ -1,4 +1,4 @@
-﻿namespace NanoCache.Models;
+﻿namespace NanoCache;
 
 public class NanoUserOptions
 {

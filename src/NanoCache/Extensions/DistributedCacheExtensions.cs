@@ -1,4 +1,4 @@
-﻿namespace NanoCache.Extensions;
+﻿namespace NanoCache;
 
 public static class DistributedCacheExtensions
 {
@@ -25,8 +25,8 @@ public static class DistributedCacheExtensions
 
     public static void SetObject(this IDistributedCache cache, string key, object value, DistributedCacheEntryOptions options)
     {
-        if(key == null) throw new ArgumentNullException(nameof(key));
-        if(value == null) throw new ArgumentNullException(nameof(value));
+        if (string.IsNullOrEmpty(key)) return;
+        if (value == null) return;
 
         cache.Set(key, BinaryHelpers.Serialize(value), options);
     }
@@ -36,10 +36,10 @@ public static class DistributedCacheExtensions
         await cache.SetObjectAsync(key, value, new DistributedCacheEntryOptions(), token).ConfigureAwait(false);
     }
 
-    public static async Task SetObjectAsync(this IDistributedCache cache, string key, object value, DistributedCacheEntryOptions options, CancellationToken token = default(CancellationToken))
+    public static async Task SetObjectAsync(this IDistributedCache cache, string key, object value, DistributedCacheEntryOptions options, CancellationToken token = default)
     {
-        if (key == null) throw new ArgumentNullException(nameof(key));
-        if (value == null) throw new ArgumentNullException(nameof(value));
+        if (string.IsNullOrEmpty(key)) return;
+        if (value == null) return;
 
         await cache.SetAsync(key, BinaryHelpers.Serialize(value), options, token).ConfigureAwait(false);
     }

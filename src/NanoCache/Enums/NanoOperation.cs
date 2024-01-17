@@ -1,4 +1,4 @@
-﻿namespace NanoCache.Enums;
+﻿namespace NanoCache;
 
 public enum NanoOperation : byte
 {

@@ -1,8 +1,8 @@
-﻿namespace NanoCache.Security;
+﻿namespace NanoCache;
 
 public static class CRC16
 {
-    private static ushort[] _crc16Table =
+    private static readonly ushort[] _crc16Table =
     {
         0x0000, 0x1189, 0x2312, 0x329B,
         0x4624, 0x57AD, 0x6536, 0x74BF,

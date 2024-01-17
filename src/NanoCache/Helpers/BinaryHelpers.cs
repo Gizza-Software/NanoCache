@@ -1,4 +1,4 @@
-﻿namespace NanoCache.Helpers;
+﻿namespace NanoCache;
 
 internal static class BinaryHelpers
 {
