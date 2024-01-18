@@ -78,7 +78,7 @@ public sealed class NanoCacheServer
 #if RELEASE
             try {
 #endif
-            await Task.Delay(TimeSpan.FromSeconds(180));
+            await Task.Delay(TimeSpan.FromSeconds(60));
             GC.Collect();
 #if RELEASE
             } catch { }

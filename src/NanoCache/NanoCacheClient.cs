@@ -228,8 +228,11 @@ public sealed class NanoCacheClient : IDistributedCache
             await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000);
 
             // GC
-            if ((DateTime.Now - gctime).TotalSeconds > 180)
+            if ((DateTime.Now - gctime).TotalSeconds > 60)
+            {
+                gctime = DateTime.Now;
                 GC.Collect();
+            }
         }
     }
     #endregion
