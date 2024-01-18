@@ -2,27 +2,27 @@
 
 public sealed class NanoCacheClient : IDistributedCache
 {
-    /* Session */
+    // Session
     public bool Connected { get => _client.Connected; }
     public bool Authenticated { get; private set; }
 
-    /* Identifier */
+    // Identifier
     private long _identifier;
 
-    /* TCP Socket */
+    // TCP Socket
     private TcpSharpSocketClient _client;
     private List<byte> _buffer = [];
 
-    /* Distributed Cache Options */
+    // Distributed Cache Options
     private NanoCacheOptions _options;
 
-    /* Data Stack */
-    private NanoDataStackClient _clientDataStack;
+    // Data Stack
+    private ConcurrentDictionary<long, DateTime> _timeouts = [];
+    private ConcurrentDictionary<long, NanoRequest> _requests = [];
+    private ConcurrentDictionary<long, TaskCompletionSource<NanoResponse>> _callbacks = [];
 
-    /* Timeout Manager */
+    // Timeout Manager
     private readonly Thread _timeoutThread;
-    private readonly CancellationTokenSource _timeoutCancellationTokenSource;
-    private readonly CancellationToken _timeoutCancellationToken;
 
     [Obsolete("Do not use constructor directly instead pull IDistributedCache from DI. For this add 'builder.Services.AddNanoDistributedCache'")]
     public NanoCacheClient(IOptions<NanoCacheOptions> options) : this(options.Value)
@@ -34,12 +34,7 @@ public sealed class NanoCacheClient : IDistributedCache
         // Configure
         Configure(options);
 
-        // Data Stack
-        _clientDataStack = new NanoDataStackClient();
-
         // Timeout Manager
-        _timeoutCancellationTokenSource = new CancellationTokenSource();
-        _timeoutCancellationToken = _timeoutCancellationTokenSource.Token;
         _timeoutThread = new Thread(async () => await TimeoutActionAsync());
         _timeoutThread.Start();
     }
@@ -93,7 +88,9 @@ public sealed class NanoCacheClient : IDistributedCache
     private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
     {
         // Data Stack
-        _clientDataStack = new NanoDataStackClient();
+        _timeouts = [];
+        _requests = [];
+        _callbacks = [];
 
         // Login
         if (!this.Authenticated)
@@ -131,29 +128,26 @@ public sealed class NanoCacheClient : IDistributedCache
         try
         {
 #endif
-            if (bytes.Length < 2) return;
-            if (bytes[0] < 1 || bytes[0] > 14) return;
+        if (bytes.Length < 2) return;
+        if (bytes[0] < 1 || bytes[0] > 14) return;
 
-            // Parse Bytes
-            var dataType = (NanoOperation)bytes[0];
-            var dataBody = new byte[bytes.Length - 1];
-            Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
+        // Parse Bytes
+        var dataType = (NanoOperation)bytes[0];
+        var dataBody = new byte[bytes.Length - 1];
+        Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
 
-            // Get Data
-            var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
-            if (response == null) return;
+        // Get Data
+        var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
+        if (response == null) return;
 
-            // Set Value
-            if (_clientDataStack.CacheServerResponseCallbacks.ContainsKey(response.Identifier))
-                _clientDataStack.CacheServerResponseCallbacks[response.Identifier].TrySetResult(response);
+        // Set Value
+        if (_callbacks.TryGetValue(response.Identifier, out var callback))
+            callback.TrySetResult(response);
 
-            // Remove Request
-            if (_clientDataStack.CacheServerRequests.ContainsKey(response.Identifier))
-                _clientDataStack.CacheServerRequests.TryRemove(response.Identifier, out _);
-
-            // Remove Timeout
-            if (_clientDataStack.CacheServerResponseTimeouts.ContainsKey(response.Identifier))
-                _clientDataStack.CacheServerResponseTimeouts.TryRemove(response.Identifier, out _);
+        // Remove Items
+        _timeouts.TryRemove(response.Identifier, out _);
+        _requests.TryRemove(response.Identifier, out _);
+        _callbacks.TryRemove(response.Identifier, out _);
 #if RELEASE
         }
         catch { }
@@ -182,16 +176,16 @@ public sealed class NanoCacheClient : IDistributedCache
 
         // Add to DataStack
         var tcs = new TaskCompletionSource<NanoResponse>();
-        _clientDataStack.CacheServerRequests.TryAdd(id, req);
-        _clientDataStack.CacheServerResponseCallbacks.TryAdd(id, tcs);
-        _clientDataStack.CacheServerResponseTimeouts.TryAdd(id, DateTime.Now.AddSeconds(_options.QueryTimeoutInSeconds));
+        _timeouts.TryAdd(id, DateTime.Now.AddSeconds(_options.QueryTimeoutInSeconds));
+        _requests.TryAdd(id, req);
+        _callbacks.TryAdd(id, tcs);
 
         // Cancellation Token
         cancellationToken.Register(() =>
         {
-            _clientDataStack.CacheServerRequests.TryRemove(id, out _);
-            _clientDataStack.CacheServerResponseCallbacks.TryRemove(id, out _);
-            _clientDataStack.CacheServerResponseTimeouts.TryRemove(id, out _);
+            _timeouts.TryRemove(id, out _);
+            _requests.TryRemove(id, out _);
+            _callbacks.TryRemove(id, out _);
         });
 
         // Send
@@ -205,33 +199,37 @@ public sealed class NanoCacheClient : IDistributedCache
     #region Timeout Methods
     private async Task TimeoutActionAsync()
     {
-        while (!_timeoutCancellationToken.IsCancellationRequested)
+        var gctime = DateTime.Now;
+        while (true)
         {
-            var ids = _clientDataStack.CacheServerResponseTimeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
+            var ids = _timeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
             foreach (var id in ids)
             {
-                // Get Request
-                if (_clientDataStack.CacheServerResponseCallbacks.ContainsKey(id))
-                    _clientDataStack.CacheServerResponseCallbacks[id].TrySetResult(new NanoResponse
+                // Set Response
+                if (_callbacks.TryGetValue(id, out var callback))
+                    callback.TrySetResult(new NanoResponse
                     {
                         Success = false,
                         Identifier = id,
                         Operation = NanoOperation.Timeout,
-                        Value = Array.Empty<byte>()
+                        Value = []
                     });
 
-                if (_clientDataStack.CacheServerRequests.ContainsKey(id))
-                    _clientDataStack.CacheServerRequests.TryRemove(id, out _);
-
-                if (_clientDataStack.CacheServerResponseTimeouts.ContainsKey(id))
-                    _clientDataStack.CacheServerResponseTimeouts.TryRemove(id, out _);
+                // Remove Items
+                _timeouts.TryRemove(id, out _);
+                _requests.TryRemove(id, out _);
+                _callbacks.TryRemove(id, out _);
             }
 
             // Disconnected?
             // if (_options.Reconnect) Reconnect();
 
             // Wait for next turn
-            await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000, _timeoutCancellationToken);
+            await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000);
+
+            // GC
+            if ((DateTime.Now - gctime).TotalSeconds > 180)
+                GC.Collect();
         }
     }
     #endregion

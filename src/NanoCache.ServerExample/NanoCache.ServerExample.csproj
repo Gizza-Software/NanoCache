@@ -12,6 +12,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\NanoCache\NanoCache.csproj" />
+    <ProjectReference Include="..\NanoCache\NanoCache.csproj" />
   </ItemGroup>
 </Project>
