@@ -56,7 +56,7 @@ public sealed class NanoCacheServer
         Task.Factory.StartNew(QueryConsumer, TaskCreationOptions.LongRunning);
 
         // Memory Optimizer Task
-        Task.Factory.StartNew(MemoryOptimizer, TaskCreationOptions.LongRunning);
+        Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
     }
 
     public void StartListening()
@@ -71,17 +71,19 @@ public sealed class NanoCacheServer
             _listener!.StopListening();
     }
 
-    private async Task MemoryOptimizer()
+    private async Task MemoryOptimizerAsync()
     {
         while (true)
         {
 #if RELEASE
-            try {
+            try
+            {
 #endif
-            await Task.Delay(TimeSpan.FromSeconds(60));
-            GC.Collect();
+                await Task.Delay(TimeSpan.FromSeconds(60));
+                GC.Collect();
 #if RELEASE
-            } catch { }
+            }
+            catch { }
 #endif
         }
     }
@@ -90,61 +92,61 @@ public sealed class NanoCacheServer
     private void QueryConsumer()
     {
 #if RELEASE
-            try
-            {
-#endif
-        foreach (var item in _clientRequests.GetConsumingEnumerable())
+        try
         {
-#if RELEASE
-            try
-            {
 #endif
-            if (_debugMode)
+            foreach (var item in _clientRequests.GetConsumingEnumerable())
             {
-                Console.WriteLine("----------------------------------------------------------------------------------------------------");
-                Console.WriteLine("Client Connection Id: " + item.Client.ConnectionId);
-                Console.WriteLine("Client Logged In    : " + item.Client.LoggedIn);
-                Console.WriteLine("Request Identifier  : " + item.Request.Identifier);
-                Console.WriteLine("Request Operation   : " + item.Request.Operation.ToString());
-                Console.WriteLine("Request Key         : " + item.Request.Key);
-            }
+#if RELEASE
+                try
+                {
+#endif
+                    if (_debugMode)
+                    {
+                        Console.WriteLine("----------------------------------------------------------------------------------------------------");
+                        Console.WriteLine("Client Connection Id: " + item.Client.ConnectionId);
+                        Console.WriteLine("Client Logged In    : " + item.Client.LoggedIn);
+                        Console.WriteLine("Request Identifier  : " + item.Request.Identifier);
+                        Console.WriteLine("Request Operation   : " + item.Request.Operation.ToString());
+                        Console.WriteLine("Request Key         : " + item.Request.Key);
+                    }
 
-            if (item == null) continue;
-            if (item.Client == null) continue;
-            if (item.Request == null) continue;
+                    if (item == null) continue;
+                    if (item.Client == null) continue;
+                    if (item.Request == null) continue;
 
-            switch (item.Request.Operation)
-            {
-                case NanoOperation.Ping:
-                    ResponsePing(item);
-                    break;
-                case NanoOperation.Login:
-                    ResponseLogin(item);
-                    break;
-                case NanoOperation.Logout:
-                    ResponseLogout(item);
-                    break;
-                case NanoOperation.Set:
-                    ResponseSet(item);
-                    break;
-                case NanoOperation.Get:
-                    ResponseGet(item);
-                    break;
-                case NanoOperation.Refresh:
-                    ResponseRefresh(item);
-                    break;
-                case NanoOperation.Remove:
-                    ResponseRemove(item);
-                    break;
+                    switch (item.Request.Operation)
+                    {
+                        case NanoOperation.Ping:
+                            ResponsePing(item);
+                            break;
+                        case NanoOperation.Login:
+                            ResponseLogin(item);
+                            break;
+                        case NanoOperation.Logout:
+                            ResponseLogout(item);
+                            break;
+                        case NanoOperation.Set:
+                            ResponseSet(item);
+                            break;
+                        case NanoOperation.Get:
+                            ResponseGet(item);
+                            break;
+                        case NanoOperation.Refresh:
+                            ResponseRefresh(item);
+                            break;
+                        case NanoOperation.Remove:
+                            ResponseRemove(item);
+                            break;
+                    }
+#if RELEASE
+                }
+                catch { }
+#endif
             }
 #if RELEASE
-            }
-            catch { }
-#endif
         }
-#if RELEASE
-            }
-            catch { }
+        catch { }
 #endif
     }
 
@@ -216,9 +218,12 @@ public sealed class NanoCacheServer
 
         // Options
         var options = new MemoryCacheEntryOptions();
-        if (item.Client.Options.DefaultAbsoluteExpiration.HasValue) options.AbsoluteExpiration = item.Client.Options.DefaultAbsoluteExpiration.Value;
-        if (item.Client.Options.DefaultAbsoluteExpirationRelativeToNow.HasValue) options.AbsoluteExpirationRelativeToNow = item.Client.Options.DefaultAbsoluteExpirationRelativeToNow.Value;
-        if (item.Client.Options.DefaultSlidingExpiration.HasValue) options.SlidingExpiration = item.Client.Options.DefaultSlidingExpiration.Value;
+        if (item.Client.Options != null)
+        {
+            if (item.Client.Options.DefaultAbsoluteExpiration.HasValue) options.AbsoluteExpiration = item.Client.Options.DefaultAbsoluteExpiration.Value;
+            if (item.Client.Options.DefaultAbsoluteExpirationRelativeToNow.HasValue) options.AbsoluteExpirationRelativeToNow = item.Client.Options.DefaultAbsoluteExpirationRelativeToNow.Value;
+            if (item.Client.Options.DefaultSlidingExpiration.HasValue) options.SlidingExpiration = item.Client.Options.DefaultSlidingExpiration.Value;
+        }
 
         // Override Options
         if (item.Request.Options != null)
@@ -238,7 +243,7 @@ public sealed class NanoCacheServer
             Identifier = item.Request.Identifier,
             Operation = item.Request.Operation,
             Key = item.Request.Key,
-            Value = new byte[1] { 0x01 },
+            Value = [0x01],
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
@@ -288,7 +293,7 @@ public sealed class NanoCacheServer
             Identifier = item.Request.Identifier,
             Operation = item.Request.Operation,
             Key = item.Request.Key,
-            Value = new byte[1] { 0x01 },
+            Value = [0x01],
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
@@ -378,27 +383,27 @@ public sealed class NanoCacheServer
         try
         {
 #endif
-        if (bytes.Length < 2)
-            return;
-        if (bytes[0] < 1 || bytes[0] > 14)
-            return;
+            if (bytes.Length < 2)
+                return;
+            if (bytes[0] < 1 || bytes[0] > 14)
+                return;
 
-        var client = _clients[connectionId];
-        var dataType = (NanoOperation)bytes[0];
-        var dataBody = new byte[bytes.Length - 1];
-        Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
+            var client = _clients[connectionId];
+            var dataType = (NanoOperation)bytes[0];
+            var dataBody = new byte[bytes.Length - 1];
+            Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
 
-        var request = BinaryHelpers.Deserialize<NanoRequest>(dataBody);
-        if (request == null)
-            return;
+            var request = BinaryHelpers.Deserialize<NanoRequest>(dataBody);
+            if (request == null)
+                return;
 
-        // Add to DataStack
-        _clientRequests.TryAdd(new NanoWaitingRequest
-        {
-            Client = client,
-            Request = request,
-            ConnectionId = connectionId,
-        });
+            // Add to DataStack
+            _clientRequests.TryAdd(new NanoWaitingRequest
+            {
+                Client = client,
+                Request = request,
+                ConnectionId = connectionId,
+            });
 #if RELEASE
         }
         catch { }

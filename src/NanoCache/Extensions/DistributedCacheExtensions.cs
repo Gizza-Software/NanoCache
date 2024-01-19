@@ -10,9 +10,9 @@ public static class DistributedCacheExtensions
         return BinaryHelpers.Deserialize<T>(data);
     }
 
-    public static async Task<T> GetObjectAsync<T>(this IDistributedCache cache, string key, CancellationToken token = default)
+    public static async Task<T> GetObjectAsync<T>(this IDistributedCache cache, string key)
     {
-        byte[] data = await cache.GetAsync(key, token).ConfigureAwait(false);
+        byte[] data = await cache.GetAsync(key).ConfigureAwait(false);
         if (data == null) return default;
 
         return BinaryHelpers.Deserialize<T>(data);
@@ -31,17 +31,17 @@ public static class DistributedCacheExtensions
         cache.Set(key, BinaryHelpers.Serialize(value), options);
     }
 
-    public static async Task SetObjectAsync(this IDistributedCache cache, string key, object value, CancellationToken token = default)
+    public static async Task SetObjectAsync(this IDistributedCache cache, string key, object value)
     {
-        await cache.SetObjectAsync(key, value, new DistributedCacheEntryOptions(), token).ConfigureAwait(false);
+        await cache.SetObjectAsync(key, value, new DistributedCacheEntryOptions()).ConfigureAwait(false);
     }
 
-    public static async Task SetObjectAsync(this IDistributedCache cache, string key, object value, DistributedCacheEntryOptions options, CancellationToken token = default)
+    public static async Task SetObjectAsync(this IDistributedCache cache, string key, object value, DistributedCacheEntryOptions options)
     {
         if (string.IsNullOrEmpty(key)) return;
         if (value == null) return;
 
-        await cache.SetAsync(key, BinaryHelpers.Serialize(value), options, token).ConfigureAwait(false);
+        await cache.SetAsync(key, BinaryHelpers.Serialize(value), options).ConfigureAwait(false);
     }
 
 }
