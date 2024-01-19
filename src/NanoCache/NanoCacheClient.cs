@@ -44,9 +44,6 @@ public sealed class NanoCacheClient : IDistributedCache
         // Options
         _options = options;
 
-        // Buffer
-        _buffer = new List<byte>();
-
         // TCP Socket
         _client = new TcpSharpSocketClient(_options.CacheServerHost, _options.CacheServerPort);
         _client.Reconnect = _options.Reconnect;

@@ -24,7 +24,6 @@ internal static class SocketHelpers
         lock (_lock)
         {
             buffer.AddRange(bytes);
-            var buff = buffer.ToArray();
 
             // Minimum paket uzunluğu 8 byte
             // * SYNC     : 2 Bytes
@@ -43,30 +42,30 @@ internal static class SocketHelpers
             if (security == SocketSecurity.CRC16) crcLength = 2;
             else if (security == SocketSecurity.CRC32) crcLength = 4;
 
-            if (buff.Length >= minimumPacketLength)
+            if (buffer.Count >= minimumPacketLength)
             {
-                var indexOf = buff.IndexOf(header);
+                var indexOf = buffer.IndexOf(header);
                 if (indexOf == -1) buffer.Clear();
                 else if (indexOf == 0) // SYNC Bytes
                 {
                     // lenghtValue = Data Type (1) + Content (X)
                     // lenghtValue CRC bytelarını kapsamıyor.
-                    var lenghtValue = BitConverter.ToInt32(buff, syncLength);
+                    var lenghtBytes = buffer.Skip(syncLength).Take(4).ToArray();
+                    var lenghtValue = BitConverter.ToInt32(lenghtBytes, 0);
 
                     // Paket yeterki kadar büyük mü? 
                     // Paketin gereğinden fazla büyük olması sorun değil.
                     var packetLength = syncLength + lengthLength + lenghtValue + crcLength;
-                    if (buff.Length >= packetLength)
+                    if (buffer.Count >= packetLength)
                     {
                         // CRC-Body'i ayarlayalım
-                        var crcBody = new byte[lenghtValue];
                         var preBytesLength = syncLength + lengthLength;
-                        Array.Copy(buff, preBytesLength, crcBody, 0, lenghtValue);
+                        var crcBody = buffer.Skip(preBytesLength).Take(lenghtValue).ToArray();
 
                         // Check CRC & Consume
 #if RELEASE
-                        try
-                        {
+                            try
+                            {
 #endif
                         // Check Point
                         var consume = false;
@@ -76,15 +75,13 @@ internal static class SocketHelpers
                         }
                         else if (security == SocketSecurity.CRC16)
                         {
-                            var crcBytes = new byte[crcLength];
-                            Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
+                            var crcBytes = buffer.Skip(lenghtValue + preBytesLength).Take(crcLength).ToArray();
                             var crcValue = BitConverter.ToUInt16(crcBytes, 0);
                             consume = CRC16.CheckChecksum(crcBody, crcValue);
                         }
                         else if (security == SocketSecurity.CRC32)
                         {
-                            var crcBytes = new byte[crcLength];
-                            Array.Copy(buff, lenghtValue + preBytesLength, crcBytes, 0, crcLength);
+                            var crcBytes = buffer.Skip(lenghtValue + preBytesLength).Take(crcLength).ToArray();
                             var crcValue = BitConverter.ToUInt32(crcBytes, 0);
                             consume = CRC32.CheckChecksum(crcBody, crcValue);
                         }
@@ -95,8 +92,8 @@ internal static class SocketHelpers
                             consumer(crcBody, connectionId);
                         }
 #if RELEASE
-                        }
-                        catch { }
+                            }
+                            catch { }
 #endif
 
                         // Consume edilen veriyi buffer'dan at
