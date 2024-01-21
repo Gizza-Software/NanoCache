@@ -71,20 +71,14 @@ public sealed class NanoCacheServer
             _listener!.StopListening();
     }
 
+    DateTime gctime = DateTime.Now;
     private async Task MemoryOptimizerAsync()
     {
         while (true)
         {
-#if RELEASE
-            try
-            {
-#endif
-                await Task.Delay(TimeSpan.FromSeconds(60));
-                GC.Collect();
-#if RELEASE
-            }
-            catch { }
-#endif
+            await Task.Delay(TimeSpan.FromSeconds(60));
+            gctime = DateTime.Now;
+            GC.Collect();
         }
     }
 
@@ -101,43 +95,52 @@ public sealed class NanoCacheServer
                 try
                 {
 #endif
-                    if (_debugMode)
+                    using (item)
                     {
-                        Console.WriteLine("----------------------------------------------------------------------------------------------------");
-                        Console.WriteLine("Client Connection Id: " + item.Client.ConnectionId);
-                        Console.WriteLine("Client Logged In    : " + item.Client.LoggedIn);
-                        Console.WriteLine("Request Identifier  : " + item.Request.Identifier);
-                        Console.WriteLine("Request Operation   : " + item.Request.Operation.ToString());
-                        Console.WriteLine("Request Key         : " + item.Request.Key);
+                        if (_debugMode)
+                        {
+                            Console.WriteLine("----------------------------------------------------------------------------------------------------");
+                            Console.WriteLine("Client Connection Id: " + item.Client.ConnectionId);
+                            Console.WriteLine("Client Logged In    : " + item.Client.LoggedIn);
+                            Console.WriteLine("Request Identifier  : " + item.Request.Identifier);
+                            Console.WriteLine("Request Operation   : " + item.Request.Operation.ToString());
+                            Console.WriteLine("Request Key         : " + item.Request.Key);
+                        }
+
+                        if (item == null) continue;
+                        if (item.Client == null) continue;
+                        if (item.Request == null) continue;
+
+                        switch (item.Request.Operation)
+                        {
+                            case NanoOperation.Ping:
+                                ResponsePing(item);
+                                break;
+                            case NanoOperation.Login:
+                                ResponseLogin(item);
+                                break;
+                            case NanoOperation.Logout:
+                                ResponseLogout(item);
+                                break;
+                            case NanoOperation.Set:
+                                ResponseSet(item);
+                                break;
+                            case NanoOperation.Get:
+                                ResponseGet(item);
+                                break;
+                            case NanoOperation.Refresh:
+                                ResponseRefresh(item);
+                                break;
+                            case NanoOperation.Remove:
+                                ResponseRemove(item);
+                                break;
+                        }
                     }
 
-                    if (item == null) continue;
-                    if (item.Client == null) continue;
-                    if (item.Request == null) continue;
-
-                    switch (item.Request.Operation)
+                    // Memory Optimizer Task
+                    if (DateTime.Now.Subtract(gctime).TotalMinutes > 5)
                     {
-                        case NanoOperation.Ping:
-                            ResponsePing(item);
-                            break;
-                        case NanoOperation.Login:
-                            ResponseLogin(item);
-                            break;
-                        case NanoOperation.Logout:
-                            ResponseLogout(item);
-                            break;
-                        case NanoOperation.Set:
-                            ResponseSet(item);
-                            break;
-                        case NanoOperation.Get:
-                            ResponseGet(item);
-                            break;
-                        case NanoOperation.Refresh:
-                            ResponseRefresh(item);
-                            break;
-                        case NanoOperation.Remove:
-                            ResponseRemove(item);
-                            break;
+                        Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
                     }
 #if RELEASE
                 }

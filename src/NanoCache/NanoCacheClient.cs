@@ -58,36 +58,21 @@ public sealed class NanoCacheClient : IDistributedCache
         _client.OnDataReceived += Client_OnDataReceived;
     }
 
-    public void Connect()
-    {
-        if (!Connected)
-            _client.Connect();
-    }
-
-    public void Disconnect()
-    {
-        if (_client == null || Connected)
-            _client!.Disconnect();
-    }
-
-    public void Reconnect()
-    {
-        Disconnect();
-        Connect();
-    }
-
     public void Authenticate()
     {
-        this.Connect();
-    }
+        // Check Connection
+        if (!Connected)
+        {
+            // Connect
+            Connect();
 
-    #region TCP Socket Events
-    private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
-    {
-        // Data Stack
-        _timeouts = [];
-        _requests = [];
-        _callbacks = [];
+            // Wait for connection
+            var timeout = DateTime.Now.AddSeconds(_options.ConnectionTimeoutInSeconds);
+            while (!Connected && DateTime.Now < timeout) Task.Delay(100).GetAwaiter().GetResult();
+
+            // Check Connection
+            if (!Connected) throw new InvalidOperationException("Connection timed out");
+        }
 
         // Login
         if (!this.Authenticated)
@@ -103,10 +88,44 @@ public sealed class NanoCacheClient : IDistributedCache
             };
 
             var loginResponse = Send(NanoOperation.Login, "", BinaryHelpers.Serialize(loginModel));
-            if (loginResponse == null || !loginResponse.Success) throw new InvalidOperationException("Invalid credentials or connection timed out");
+            // if (loginResponse == null || !loginResponse.Success)
+            // throw new InvalidOperationException("Invalid credentials or connection timed out");
 
             this.Authenticated = loginResponse != null && loginResponse.Success;
         }
+    }
+
+    public void Connect()
+    {
+        if (!Connected)
+            _client.Connect();
+    }
+
+    public void Disconnect()
+    {
+        if (_client == null || Connected)
+            _client!.Disconnect();
+
+        this.Authenticated = false;
+    }
+
+    public void Reconnect()
+    {
+        // Disconnect
+        Disconnect();
+
+        // Wait for disconnection
+        var timeout = DateTime.Now.AddSeconds(_options.ConnectionTimeoutInSeconds);
+        while (Connected && DateTime.Now < timeout) Task.Delay(100).GetAwaiter().GetResult();
+
+        // Connect
+        Connect();
+    }
+
+    #region TCP Socket Events
+    private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
+    {
+        Authenticate();
     }
 
     private void Client_OnDisconnected(object sender, OnClientDisconnectedEventArgs e)
@@ -173,7 +192,9 @@ public sealed class NanoCacheClient : IDistributedCache
 
         // Add to DataStack
         var tcs = new TaskCompletionSource<NanoResponse>();
-        _timeouts.TryAdd(id, DateTime.Now.AddSeconds(_options.QueryTimeoutInSeconds));
+        _timeouts.TryAdd(id, DateTime.Now.AddSeconds(Connected 
+            ? _options.QueryTimeoutInSeconds 
+            : _options.QueryTimeoutInSeconds + _options.ConnectionTimeoutInSeconds));
         _requests.TryAdd(id, req);
         _callbacks.TryAdd(id, tcs);
 
@@ -238,20 +259,20 @@ public sealed class NanoCacheClient : IDistributedCache
     public byte[] Get(string key)
     {
         Authenticate();
-        if (!this.Authenticated) return Array.Empty<byte>();
+        if (!this.Authenticated) return [];
 
         var response = Send(NanoOperation.Get, key);
-        if (response == null || !response.Success) return Array.Empty<byte>();
+        if (response == null || !response.Success) return [];
 
         return response.Value;
     }
     public async Task<byte[]> GetAsync(string key, CancellationToken token = default)
     {
         Authenticate();
-        if (!this.Authenticated) return Array.Empty<byte>();
+        if (!this.Authenticated) return [];
 
         var response = await SendAsync(NanoOperation.Get, key, null, null, token);
-        if (response == null || !response.Success) return Array.Empty<byte>();
+        if (response == null || !response.Success) return [];
 
         return response.Value;
     }
