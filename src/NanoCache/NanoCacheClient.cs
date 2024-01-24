@@ -37,6 +37,9 @@ public sealed class NanoCacheClient : IDistributedCache
         // Timeout Manager
         _timeoutThread = new Thread(async () => await TimeoutActionAsync());
         _timeoutThread.Start();
+
+        // Memory Optimizer Task
+        Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
     }
 
     public void Configure(NanoCacheOptions options)
@@ -56,6 +59,17 @@ public sealed class NanoCacheClient : IDistributedCache
         _client.OnConnected += Client_OnReadyToSend;
         _client.OnDisconnected += Client_OnDisconnected;
         _client.OnDataReceived += Client_OnDataReceived;
+    }
+
+    DateTime gctime = DateTime.Now;
+    private async Task MemoryOptimizerAsync()
+    {
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(60));
+            gctime = DateTime.Now;
+            GC.Collect();
+        }
     }
 
     public void Authenticate()
