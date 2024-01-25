@@ -9,8 +9,6 @@ public enum SocketSecurity
 
 internal static class SocketHelpers
 {
-    private static readonly object _lock = new();
-
     public static void CacheAndConsume(byte[] bytes, string connectionId, List<byte> buffer, Action<byte[], string> consumer)
     {
         var security = SocketSecurity.None;
@@ -21,7 +19,7 @@ internal static class SocketHelpers
         {
 #endif
         // Gelen verileri buffer'a ekle ve bu halini "buff" olarak al. Sonrasında bufferı temizle
-        lock (_lock) buffer.AddRange(bytes);
+        buffer.AddRange(bytes);
 
         // Minimum paket uzunluğu 8 byte
         // * SYNC     : 2 Bytes
@@ -33,93 +31,73 @@ internal static class SocketHelpers
 
         var crcLength = 0;
         var syncLength = header.Count;
-        var lengthLength = 4;
+        var sizeLength = 4;
         var dataTypeLength = 1;
         var minimumDataLength = 1;
-        var minimumPacketLength = syncLength + lengthLength + dataTypeLength + crcLength + minimumDataLength;
+        var headerLength = syncLength + sizeLength;
+        var minimumPackageLength = syncLength + sizeLength + dataTypeLength + crcLength + minimumDataLength;
         if (security == SocketSecurity.CRC16) crcLength = 2;
         else if (security == SocketSecurity.CRC32) crcLength = 4;
 
-        var bufferLength = 0;
-        var bufferIndexOf = -1;
-        lock (_lock)
+        var consume = false;
+        var packageLength = 0;
+        var bufferLength = buffer.Count;
+        var bufferCursor = buffer.IndexOfList(header);
+        if (bufferLength >= minimumPackageLength)
         {
-            bufferLength = buffer.Count;
-            bufferIndexOf = buffer.IndexOfList(header);
-        }
-
-        if (bufferLength >= minimumPacketLength)
-        {
-            if (bufferIndexOf == 0) // SYNC Bytes
+            if (bufferCursor == 0) // SYNC Bytes
             {
                 // lenghtValue = Data Type (1) + Content (X)
                 // lenghtValue CRC bytelarını kapsamıyor.
                 var lenghtBytes = buffer.Skip(syncLength).Take(4).ToArray();
                 var lengthValue = BitConverter.ToInt32(lenghtBytes, 0);
-                var packetLength = syncLength + lengthLength + lengthValue + crcLength;
-                var preBytesLength = syncLength + lengthLength;
-                if (bufferLength >= packetLength)
+                packageLength = syncLength + sizeLength + lengthValue + crcLength;
+                if (bufferLength >= packageLength)
                 {
-#if RELEASE
-                        try
-                        {
-#endif
+
                     // Security
-                    var consume = false;
                     byte[] payload = null;
-                    lock (_lock)
+                    if (security == SocketSecurity.None)
                     {
-                        if (security == SocketSecurity.None)
-                        {
-                            payload = buffer.Skip(preBytesLength).Take(lengthValue).ToArray();
-                            consume = true;
-                        }
-                        else if (security == SocketSecurity.CRC16)
-                        {
-                            var crcBytes = buffer.Skip(lengthValue + preBytesLength).Take(crcLength).ToArray();
-                            var crcValue = BitConverter.ToUInt16(crcBytes, 0);
-                            payload = buffer.Skip(preBytesLength).Take(lengthValue).ToArray();
-                            consume = CRC16.CheckChecksum(payload, crcValue);
-                        }
-                        else if (security == SocketSecurity.CRC32)
-                        {
-                            var crcBytes = buffer.Skip(lengthValue + preBytesLength).Take(crcLength).ToArray();
-                            var crcValue = BitConverter.ToUInt32(crcBytes, 0);
-                            payload = buffer.Skip(preBytesLength).Take(lengthValue).ToArray();
-                            consume = CRC32.CheckChecksum(payload, crcValue);
-                        }
+                        payload = buffer.Skip(headerLength).Take(lengthValue).ToArray();
+                        consume = true;
+                    }
+                    else if (security == SocketSecurity.CRC16)
+                    {
+                        var crcBytes = buffer.Skip(headerLength + lengthValue).Take(crcLength).ToArray();
+                        var crcValue = BitConverter.ToUInt16(crcBytes, 0);
+                        payload = buffer.Skip(headerLength).Take(lengthValue).ToArray();
+                        consume = CRC16.CheckChecksum(payload, crcValue);
+                    }
+                    else if (security == SocketSecurity.CRC32)
+                    {
+                        var crcBytes = buffer.Skip(lengthValue + headerLength).Take(crcLength).ToArray();
+                        var crcValue = BitConverter.ToUInt32(crcBytes, 0);
+                        payload = buffer.Skip(headerLength).Take(lengthValue).ToArray();
+                        consume = CRC32.CheckChecksum(payload, crcValue);
                     }
 
                     // Remove from Buffer
-                    lock (_lock) buffer.RemoveRange(0, packetLength);
+                    buffer.RemoveRange(0, packageLength);
 
+#if RELEASE
+try {
+#endif
                     // Consume
                     if (consume) consumer(payload, connectionId);
 #if RELEASE
-                        }
-                        catch { }
+} catch { }
 #endif
                 }
             }
-            else if (bufferIndexOf == -1)
-            {
-                lock (_lock)
-                {
-                    buffer.Clear();
-                }
-            }
-            else
-            {
-                lock (_lock)
-                {
-                    buffer.RemoveRange(0, bufferIndexOf);
-                }
-            }
+            else if (bufferCursor == -1) buffer.Clear();
+            else buffer.RemoveRange(0, bufferCursor);
         }
 
         // Arta kalanları veri için bu methodu yeniden çalıştır
-        lock (_lock) bufferLength = buffer.Count;
-        if (bufferLength >= minimumPacketLength) CacheAndConsume([], connectionId, buffer, consumer);
+        if ((consume && buffer.Count >= minimumPackageLength) ||
+            (!consume && buffer.Count >= packageLength))
+            CacheAndConsume([], connectionId, buffer, consumer);
 
 #if RELEASE
         }
