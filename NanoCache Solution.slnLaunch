@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "Test Profile",
+    "Projects": [
+      {
+        "Name": "src\\NanoCache.ClientExample\\NanoCache.ClientExample.csproj",
+        "Action": "Start"
+      },
+      {
+        "Name": "src\\NanoCache.ServerExample\\NanoCache.ServerExample.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

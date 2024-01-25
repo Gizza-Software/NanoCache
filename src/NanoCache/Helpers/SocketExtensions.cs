@@ -39,9 +39,11 @@ internal static class SocketExtensions
         list.Add(crc_02);
         */
 
+        /*
         // CRC32: 4 Bytes
         var crc32 = CRC32.ComputeChecksum(crcBytes);
         list.AddRange(crc32.ToByteList());
+        */
 
         // ToArray
         return list.ToArray();

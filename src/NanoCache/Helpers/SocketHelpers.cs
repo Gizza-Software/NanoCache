@@ -13,7 +13,7 @@ internal static class SocketHelpers
 
     public static void CacheAndConsume(byte[] bytes, string connectionId, List<byte> buffer, Action<byte[], string> consumer)
     {
-        var security = SocketSecurity.CRC32;
+        var security = SocketSecurity.None;
         var header = new byte[] { 0xF1, 0xF2 };
 
 #if RELEASE
@@ -24,92 +24,116 @@ internal static class SocketHelpers
         lock (_lock)
         {
             buffer.AddRange(bytes);
+        }
 
-            // Minimum paket uzunluğu 8 byte
-            // * SYNC     : 2 Bytes
-            // * Length   : 2 Bytes
-            // * Data Type: 1 Byte
-            // * Content  : 1 Byte(Minimum)
-            // * CRC16    : 2 Bytes
-            // * CRC32    : 4 Bytes
+        // Minimum paket uzunluğu 8 byte
+        // * SYNC     : 2 Bytes
+        // * Length   : 4 Bytes
+        // * Data Type: 1 Byte
+        // * Content  : 1 Byte(Minimum)
+        // * CRC16    : 2 Bytes
+        // * CRC32    : 4 Bytes
 
-            var crcLength = 0;
-            var syncLength = header.Length;
-            var lengthLength = 4;
-            var dataTypeLength = 1;
-            var minimumDataLength = 1;
-            var minimumPacketLength = syncLength + lengthLength + dataTypeLength + crcLength + minimumDataLength;
-            if (security == SocketSecurity.CRC16) crcLength = 2;
-            else if (security == SocketSecurity.CRC32) crcLength = 4;
+        var crcLength = 0;
+        var syncLength = header.Length;
+        var lengthLength = 4;
+        var dataTypeLength = 1;
+        var minimumDataLength = 1;
+        var minimumPacketLength = syncLength + lengthLength + dataTypeLength + crcLength + minimumDataLength;
+        if (security == SocketSecurity.CRC16) crcLength = 2;
+        else if (security == SocketSecurity.CRC32) crcLength = 4;
 
-            if (buffer.Count >= minimumPacketLength)
+        var bufferLength = 0;
+        var bufferIndexOf = -1;
+        lock (_lock)
+        {
+            bufferLength = buffer.Count;
+            bufferIndexOf = buffer.IndexOf(header);
+        }
+
+        if (bufferLength >= minimumPacketLength)
+        {
+            if (bufferIndexOf == 0) // SYNC Bytes
             {
-                var indexOf = buffer.IndexOf(header);
-                if (indexOf == -1) buffer.Clear();
-                else if (indexOf == 0) // SYNC Bytes
+                // lenghtValue = Data Type (1) + Content (X)
+                // lenghtValue CRC bytelarını kapsamıyor.
+                var lenghtBytes = buffer.Skip(syncLength).Take(4).ToArray();
+                var lengthValue = BitConverter.ToInt32(lenghtBytes, 0);
+                var packetLength = syncLength + lengthLength + lengthValue + crcLength;
+                var preBytesLength = syncLength + lengthLength;
+                if (bufferLength >= packetLength)
                 {
-                    // lenghtValue = Data Type (1) + Content (X)
-                    // lenghtValue CRC bytelarını kapsamıyor.
-                    var lenghtBytes = buffer.Skip(syncLength).Take(4).ToArray();
-                    var lenghtValue = BitConverter.ToInt32(lenghtBytes, 0);
-
-                    // Paket yeterki kadar büyük mü? 
-                    // Paketin gereğinden fazla büyük olması sorun değil.
-                    var packetLength = syncLength + lengthLength + lenghtValue + crcLength;
-                    if (buffer.Count >= packetLength)
-                    {
-                        // CRC-Body'i ayarlayalım
-                        var preBytesLength = syncLength + lengthLength;
-                        var crcBody = buffer.Skip(preBytesLength).Take(lenghtValue).ToArray();
-
-                        // Check CRC & Consume
 #if RELEASE
-                            try
-                            {
+                        try
+                        {
 #endif
-                        // Check Point
-                        var consume = false;
+                    // Security
+                    var consume = false;
+                    byte[] payload = null;
+                    lock (_lock)
+                    {
                         if (security == SocketSecurity.None)
                         {
+                            payload = buffer.Skip(preBytesLength).Take(lengthValue).ToArray();
                             consume = true;
                         }
                         else if (security == SocketSecurity.CRC16)
                         {
-                            var crcBytes = buffer.Skip(lenghtValue + preBytesLength).Take(crcLength).ToArray();
+                            var crcBytes = buffer.Skip(lengthValue + preBytesLength).Take(crcLength).ToArray();
                             var crcValue = BitConverter.ToUInt16(crcBytes, 0);
-                            consume = CRC16.CheckChecksum(crcBody, crcValue);
+                            payload = buffer.Skip(preBytesLength).Take(lengthValue).ToArray();
+                            consume = CRC16.CheckChecksum(payload, crcValue);
                         }
                         else if (security == SocketSecurity.CRC32)
                         {
-                            var crcBytes = buffer.Skip(lenghtValue + preBytesLength).Take(crcLength).ToArray();
+                            var crcBytes = buffer.Skip(lengthValue + preBytesLength).Take(crcLength).ToArray();
                             var crcValue = BitConverter.ToUInt32(crcBytes, 0);
-                            consume = CRC32.CheckChecksum(crcBody, crcValue);
+                            payload = buffer.Skip(preBytesLength).Take(lengthValue).ToArray();
+                            consume = CRC32.CheckChecksum(payload, crcValue);
                         }
-
-                        // Consume
-                        if (consume)
-                        {
-                            consumer(crcBody, connectionId);
-                        }
-#if RELEASE
-                            }
-                            catch { }
-#endif
-
-                        // Consume edilen veriyi buffer'dan at
-                        if (buffer.Count >= packetLength) buffer.RemoveRange(0, packetLength);
-
-                        // Arta kalanları veri için bu methodu yeniden çalıştır
-                        if (buffer.Count > packetLength) CacheAndConsume([], connectionId, buffer, consumer);
                     }
-                }
-                else
-                {
-                    buffer.RemoveRange(0, indexOf);
-                    CacheAndConsume(Array.Empty<byte>(), connectionId, buffer, consumer);
+
+                    // Remove from Buffer
+                    lock (_lock)
+                    {
+                        buffer.RemoveRange(0, packetLength);
+                    }
+
+                    // Consume
+                    if (consume)
+                    {
+                        consumer(payload, connectionId);
+                    }
+#if RELEASE
+                        }
+                        catch { }
+#endif
                 }
             }
+            else if (bufferIndexOf == -1)
+            {
+                lock (_lock)
+                {
+                    buffer.Clear();
+                }
+            }
+            else
+            {
+                lock (_lock)
+                {
+                    buffer.RemoveRange(0, bufferIndexOf);
+                }
+                CacheAndConsume([], connectionId, buffer, consumer);
+            }
         }
+
+        lock (_lock)
+        {
+            bufferLength = buffer.Count;
+        }
+
+        // Arta kalanları veri için bu methodu yeniden çalıştır
+        if (bufferLength >= minimumPacketLength) CacheAndConsume([], connectionId, buffer, consumer);
 
 #if RELEASE
         }
