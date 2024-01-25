@@ -14,17 +14,14 @@ internal static class SocketHelpers
     public static void CacheAndConsume(byte[] bytes, string connectionId, List<byte> buffer, Action<byte[], string> consumer)
     {
         var security = SocketSecurity.None;
-        var header = new byte[] { 0xF1, 0xF2 };
+        var header = new List<byte> { 0xF1, 0xF2 };
 
 #if RELEASE
         try
         {
 #endif
         // Gelen verileri buffer'a ekle ve bu halini "buff" olarak al. Sonrasında bufferı temizle
-        lock (_lock)
-        {
-            buffer.AddRange(bytes);
-        }
+        lock (_lock) buffer.AddRange(bytes);
 
         // Minimum paket uzunluğu 8 byte
         // * SYNC     : 2 Bytes
@@ -35,7 +32,7 @@ internal static class SocketHelpers
         // * CRC32    : 4 Bytes
 
         var crcLength = 0;
-        var syncLength = header.Length;
+        var syncLength = header.Count;
         var lengthLength = 4;
         var dataTypeLength = 1;
         var minimumDataLength = 1;
@@ -48,7 +45,7 @@ internal static class SocketHelpers
         lock (_lock)
         {
             bufferLength = buffer.Count;
-            bufferIndexOf = buffer.IndexOf(header);
+            bufferIndexOf = buffer.IndexOfList(header);
         }
 
         if (bufferLength >= minimumPacketLength)
@@ -94,16 +91,10 @@ internal static class SocketHelpers
                     }
 
                     // Remove from Buffer
-                    lock (_lock)
-                    {
-                        buffer.RemoveRange(0, packetLength);
-                    }
+                    lock (_lock) buffer.RemoveRange(0, packetLength);
 
                     // Consume
-                    if (consume)
-                    {
-                        consumer(payload, connectionId);
-                    }
+                    if (consume) consumer(payload, connectionId);
 #if RELEASE
                         }
                         catch { }
@@ -123,16 +114,11 @@ internal static class SocketHelpers
                 {
                     buffer.RemoveRange(0, bufferIndexOf);
                 }
-                CacheAndConsume([], connectionId, buffer, consumer);
             }
         }
 
-        lock (_lock)
-        {
-            bufferLength = buffer.Count;
-        }
-
         // Arta kalanları veri için bu methodu yeniden çalıştır
+        lock (_lock) bufferLength = buffer.Count;
         if (bufferLength >= minimumPacketLength) CacheAndConsume([], connectionId, buffer, consumer);
 
 #if RELEASE
@@ -157,6 +143,24 @@ internal static class SocketHelpers
                 break;
             }
         }
+        return index;
+    }
+
+    public static int IndexOfList<T>(this List<T> source, List<T> search)
+    {
+        var index = -1;
+        if (source == null || search == null) return index;
+
+        for (var i = 0; i <= source.Count - search.Count; i++)
+        {
+            var matched = true;
+            for (var j = 0; j < search.Count; j++)
+            {
+                matched = matched && source[i + j].Equals(search[j]);
+            }
+            if (matched) return i;
+        }
+
         return index;
     }
 }

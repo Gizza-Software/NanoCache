@@ -149,7 +149,7 @@ public sealed class NanoCacheClient : IDistributedCache
 
     private void Client_OnDataReceived(object sender, OnClientDataReceivedEventArgs e)
     {
-        SocketHelpers.CacheAndConsume(e.Data, "CLIENT", _buffer, new Action<byte[], string>((bytes, connectionId) => { PacketReceived(bytes, connectionId); }));
+        SocketHelpers.CacheAndConsume(e.Data, "CLIENT", _buffer, new Action<byte[], string>(PacketReceived));
     }
 
     private void PacketReceived(byte[] bytes, string connectionId)
