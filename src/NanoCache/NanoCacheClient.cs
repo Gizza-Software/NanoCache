@@ -11,7 +11,8 @@ public sealed class NanoCacheClient : IDistributedCache
 
     // TCP Socket
     private TcpSharpSocketClient _client;
-    private List<byte> _buffer = [];
+    private readonly List<byte> _buffer = [];
+    private readonly BlockingCollection<byte[]> _packages = [];
 
     // Distributed Cache Options
     private NanoCacheOptions _options;
@@ -20,9 +21,6 @@ public sealed class NanoCacheClient : IDistributedCache
     private ConcurrentDictionary<long, DateTime> _timeouts = [];
     private ConcurrentDictionary<long, NanoRequest> _requests = [];
     private ConcurrentDictionary<long, TaskCompletionSource<NanoResponse>> _callbacks = [];
-
-    // Timeout Manager
-    private readonly Thread _timeoutThread;
 
     [Obsolete("Do not use constructor directly instead pull IDistributedCache from DI. For this add 'builder.Services.AddNanoDistributedCache'")]
     public NanoCacheClient(IOptions<NanoCacheOptions> options) : this(options.Value)
@@ -35,8 +33,7 @@ public sealed class NanoCacheClient : IDistributedCache
         Configure(options);
 
         // Timeout Manager
-        _timeoutThread = new Thread(async () => await TimeoutActionAsync());
-        _timeoutThread.Start();
+        Task.Factory.StartNew(TimeoutActionAsync, TaskCreationOptions.LongRunning);
 
         // Memory Optimizer Task
         Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
@@ -59,17 +56,6 @@ public sealed class NanoCacheClient : IDistributedCache
         _client.OnConnected += Client_OnReadyToSend;
         _client.OnDisconnected += Client_OnDisconnected;
         _client.OnDataReceived += Client_OnDataReceived;
-    }
-
-    DateTime gctime = DateTime.Now;
-    private async Task MemoryOptimizerAsync()
-    {
-        while (true)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(60));
-            gctime = DateTime.Now;
-            GC.Collect();
-        }
     }
 
     public void Authenticate()
@@ -136,6 +122,56 @@ public sealed class NanoCacheClient : IDistributedCache
         Connect();
     }
 
+    DateTime gctime = DateTime.Now;
+    private async Task MemoryOptimizerAsync()
+    {
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(60));
+            gctime = DateTime.Now;
+            GC.Collect();
+        }
+    }
+
+    #region Timeout Methods
+    private async Task TimeoutActionAsync()
+    {
+        while (true)
+        {
+            var ids = _timeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
+            foreach (var id in ids)
+            {
+                // Set Response
+                if (_callbacks.TryGetValue(id, out var callback))
+                    callback.TrySetResult(new NanoResponse
+                    {
+                        Success = false,
+                        Identifier = id,
+                        Operation = NanoOperation.Timeout,
+                        Value = []
+                    });
+
+                // Remove Items
+                _timeouts.TryRemove(id, out _);
+                _requests.TryRemove(id, out _);
+                _callbacks.TryRemove(id, out _);
+            }
+
+            // Disconnected?
+            // if (_options.Reconnect) Reconnect();
+
+            // Wait for next turn
+            await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000);
+
+            // Memory Optimizer Task
+            if (DateTime.Now.Subtract(gctime).TotalMinutes > 5)
+            {
+                _ = Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
+            }
+        }
+    }
+    #endregion
+
     #region TCP Socket Events
     private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
     {
@@ -155,9 +191,9 @@ public sealed class NanoCacheClient : IDistributedCache
     private void PacketReceived(byte[] bytes, string connectionId)
     {
 #if RELEASE
-        try
-        {
+try {
 #endif
+        // Check Bytes
         if (bytes.Length < 2) return;
         if (bytes[0] < 1 || bytes[0] > 14) return;
 
@@ -165,10 +201,12 @@ public sealed class NanoCacheClient : IDistributedCache
         var dataType = (NanoOperation)bytes[0];
         var dataBody = new byte[bytes.Length - 1];
         Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
+        bytes = null;
 
         // Get Data
         var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
         if (response == null) return;
+        dataBody = null;
 
         // Set Value
         if (_callbacks.TryGetValue(response.Identifier, out var callback))
@@ -179,8 +217,7 @@ public sealed class NanoCacheClient : IDistributedCache
         _requests.TryRemove(response.Identifier, out _);
         _callbacks.TryRemove(response.Identifier, out _);
 #if RELEASE
-        }
-        catch { }
+} catch { }
 #endif
     }
     #endregion
@@ -225,47 +262,6 @@ public sealed class NanoCacheClient : IDistributedCache
 
         // Return
         return tcs.Task;
-    }
-    #endregion
-
-    #region Timeout Methods
-    private async Task TimeoutActionAsync()
-    {
-        var gctime = DateTime.Now;
-        while (true)
-        {
-            var ids = _timeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
-            foreach (var id in ids)
-            {
-                // Set Response
-                if (_callbacks.TryGetValue(id, out var callback))
-                    callback.TrySetResult(new NanoResponse
-                    {
-                        Success = false,
-                        Identifier = id,
-                        Operation = NanoOperation.Timeout,
-                        Value = []
-                    });
-
-                // Remove Items
-                _timeouts.TryRemove(id, out _);
-                _requests.TryRemove(id, out _);
-                _callbacks.TryRemove(id, out _);
-            }
-
-            // Disconnected?
-            // if (_options.Reconnect) Reconnect();
-
-            // Wait for next turn
-            await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000);
-
-            // GC
-            if ((DateTime.Now - gctime).TotalSeconds > 60)
-            {
-                gctime = DateTime.Now;
-                GC.Collect();
-            }
-        }
     }
     #endregion
 

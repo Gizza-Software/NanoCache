@@ -3,7 +3,7 @@
 public class AppCache
 {
     private readonly IMemoryCache _memoryCache;
-    private readonly IDistributedCache _distributedCache;
+    public readonly IDistributedCache _distributedCache;
 
     public AppCache(IMemoryCache memoryCache, IDistributedCache distributedCache)
     {

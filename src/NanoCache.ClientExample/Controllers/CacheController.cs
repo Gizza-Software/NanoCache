@@ -29,6 +29,17 @@ public class CacheController : ControllerBase
         _appCache.GetFromMemoryCache();
         await _appCache.GetFromDistributedCacheAsync();
 
+
+        var sw00 = Stopwatch.StartNew();
+        for (var i = 0; i < limit; i++)
+        {
+            await _appCache._distributedCache.SetObjectAsync("abcdef", new CacheData(i*1024));
+            await _appCache._distributedCache.GetObjectAsync<CacheData>("abcdef");
+        }
+        sw00.Stop();
+        return this.Ok(sw00.Elapsed);
+
+
         var sw01 = Stopwatch.StartNew();
         for (var i = 0; i < limit; i++) _appCache.GetFromMemoryCache();
         sw01.Stop();
@@ -42,5 +53,19 @@ public class CacheController : ControllerBase
             Memo = sw01.Elapsed,
             Dist = sw02.Elapsed,
         });
+    }
+}
+
+
+public class CacheData
+{
+    public byte[] Data { get; set; }
+    public string Message { get; set; }
+
+    public CacheData(int count)
+    {
+        Data = new byte[count];
+        Message = "";
+        // for (var i = 0; i < count; i++) Message += "X";
     }
 }
