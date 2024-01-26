@@ -34,7 +34,7 @@ public sealed class NanoCacheServer
         _debugMode = debugMode;
 
         /* TCP Socket
-        _listener = new Tcpserver(nsoftwareKeygen.Generate(nsoftwareProduct.IPWorks).RuntimeKey);
+        _listener = new Tcpserver(license.RuntimeKey);
         _listener.Config("TcpNoDelay=true");
         _listener.Config("InBufferSize=30000000");
         _listener.OnDataIn += new Tcpserver.OnDataInHandler(Server_OnDataReceived);
