@@ -16,7 +16,7 @@ public sealed class NanoCacheServer
     private readonly List<NanoUserCredentials> _validUsers;
 
     // Data Stack
-    private readonly BlockingCollection<NanoWaitingRequest> _clientRequests = [];
+    private readonly BlockingCollection<NanoPendingRequest> _clientRequests = [];
 
     // Debugging
     private readonly bool _debugMode;
@@ -53,7 +53,7 @@ public sealed class NanoCacheServer
         _listener.OnDataReceived += Server_OnDataReceived;
 
         // Query Consumer Task
-        Task.Factory.StartNew(QueryConsumerAsync, TaskCreationOptions.LongRunning);
+        Task.Factory.StartNew(ConsumerAsync, TaskCreationOptions.LongRunning);
 
         // Memory Optimizer Task
         Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
@@ -83,7 +83,7 @@ public sealed class NanoCacheServer
     }
 
     #region Query Manager
-    private async Task QueryConsumerAsync()
+    private async Task ConsumerAsync()
     {
         await Task.CompletedTask;
 
@@ -97,7 +97,6 @@ public sealed class NanoCacheServer
                 try
                 {
 #endif
-                    // TODO: Add a timeout for requests
                     using (item)
                     {
                         if (_debugMode)
@@ -114,30 +113,37 @@ public sealed class NanoCacheServer
                         if (item.Client == null) continue;
                         if (item.Request == null) continue;
 
+                        Task task = null;
+                        var cts = new CancellationTokenSource();
                         switch (item.Request.Operation)
                         {
                             case NanoOperation.Ping:
-                                ResponsePing(item);
+                                task = PingAsync(item, cts.Token);
                                 break;
                             case NanoOperation.Login:
-                                ResponseLogin(item);
+                                task = LoginAsync(item, cts.Token);
                                 break;
                             case NanoOperation.Logout:
-                                ResponseLogout(item);
+                                task = LogoutAsync(item, cts.Token);
                                 break;
                             case NanoOperation.Set:
-                                ResponseSet(item);
+                                task = SetAsync(item, cts.Token);
                                 break;
                             case NanoOperation.Get:
-                                ResponseGet(item);
+                                task = GetAsync(item, cts.Token);
                                 break;
                             case NanoOperation.Refresh:
-                                ResponseRefresh(item);
+                                task = RefreshAsync(item, cts.Token);
                                 break;
                             case NanoOperation.Remove:
-                                ResponseRemove(item);
+                                task = RemoveAsync(item, cts.Token);
                                 break;
                         }
+
+                        var timeout = Task.Delay(5000, cts.Token);
+                        var winner = await Task.WhenAny(task, timeout);
+                        if (winner == timeout) cts.Cancel();
+                        // else cts.Cancel();
                     }
 
                     // Memory Optimizer Task
@@ -152,13 +158,14 @@ public sealed class NanoCacheServer
             }
 #if RELEASE
         }
-        finally {
-            _ = Task.Factory.StartNew(QueryConsumerAsync, TaskCreationOptions.LongRunning);
+        finally
+        {
+            _ = Task.Factory.StartNew(ConsumerAsync, TaskCreationOptions.LongRunning);
         }
 #endif
     }
 
-    private void ResponsePing(NanoWaitingRequest item)
+    private async Task PingAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         var response = new NanoResponse
         {
@@ -169,22 +176,22 @@ public sealed class NanoCacheServer
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private void ResponseLogin(NanoWaitingRequest item)
+    private async Task LoginAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         var requestData = BinaryHelpers.Deserialize<NanoUserOptions>(item.Request.Value);
         if (requestData == null)
         {
-            ResponseFailure(item);
+            await FailureAsync(item);
             return;
         }
 
         var validUser = this._validUsers.FirstOrDefault(x => x.Username.Trim() == requestData.Username.Trim() && x.Password.Trim() == requestData.Password.Trim());
         if (validUser == null && this._useCredentials)
         {
-            ResponseFailure(item);
+            await FailureAsync(item);
             return;
         }
 
@@ -197,10 +204,10 @@ public sealed class NanoCacheServer
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private void ResponseLogout(NanoWaitingRequest item)
+    private async Task LogoutAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         item.Client.Logout();
         var response = new NanoResponse
@@ -212,15 +219,15 @@ public sealed class NanoCacheServer
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private void ResponseSet(NanoWaitingRequest item)
+    private async Task SetAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         // Check Point
         if (!item.Client.LoggedIn || item.Client.Options == null)
         {
-            ResponseFailure(item);
+            await FailureAsync(item);
             return;
         }
 
@@ -243,7 +250,7 @@ public sealed class NanoCacheServer
 
         // Action
         // var json = Encoding.UTF8.GetString(item.Request.Value);
-        this._cache.Set(CacheKey(item), item.Request.Value, options);
+        this._cache.Set(Key(item), item.Request.Value, options);
 
         // Response
         var response = new NanoResponse
@@ -255,20 +262,20 @@ public sealed class NanoCacheServer
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private void ResponseGet(NanoWaitingRequest item)
+    private async Task GetAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         // Check Point
         if (!item.Client.LoggedIn || item.Client.Options == null)
         {
-            ResponseFailure(item);
+            await FailureAsync(item);
             return;
         }
 
         // Action
-        var data = this._cache.Get<byte[]>(CacheKey(item));
+        var data = this._cache.Get<byte[]>(Key(item));
 
         // Response
         var response = new NanoResponse
@@ -280,20 +287,20 @@ public sealed class NanoCacheServer
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private void ResponseRefresh(NanoWaitingRequest item)
+    private async Task RefreshAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         // Check Point
         if (!item.Client.LoggedIn || item.Client.Options == null)
         {
-            ResponseFailure(item);
+            await FailureAsync(item);
             return;
         }
 
         // Action
-        _ = this._cache.Get<byte[]>(CacheKey(item));
+        _ = this._cache.Get<byte[]>(Key(item));
 
         // Response
         var response = new NanoResponse
@@ -305,20 +312,20 @@ public sealed class NanoCacheServer
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private void ResponseRemove(NanoWaitingRequest item)
+    private async Task RemoveAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         // Check Point
         if (!item.Client.LoggedIn || item.Client.Options == null)
         {
-            ResponseFailure(item);
+            await FailureAsync(item);
             return;
         }
 
         // Action
-        this._cache.Remove(CacheKey(item));
+        this._cache.Remove(Key(item));
 
         // Response
         var response = new NanoResponse
@@ -326,33 +333,31 @@ public sealed class NanoCacheServer
             Identifier = item.Request.Identifier,
             Operation = item.Request.Operation,
             Key = item.Request.Key,
-            Value = new byte[1] { 0x01 },
+            Value = [0x01],
             Success = true,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private void ResponseFailure(NanoWaitingRequest item)
+    private async Task FailureAsync(NanoPendingRequest item, CancellationToken token = default)
     {
         var response = new NanoResponse
         {
             Identifier = item.Request.Identifier,
             Operation = NanoOperation.Failed,
             Key = item.Request.Key,
-            Value = new byte[1] { 0x00 },
+            Value = [0x00],
             Success = false,
         };
         var bytes = response.PrepareObjectToSend();
-        _listener.SendBytes(item.ConnectionId, bytes);
+        await _listener.SendBytesAsync(item.ConnectionId, bytes, token);
     }
 
-    private string CacheKey(NanoWaitingRequest item)
-    {
-        return string.IsNullOrWhiteSpace(item.Client.Options.Instance)
-            ? item.Request.Key
-            : item.Client.Options.Instance + "." + item.Request.Key;
-    }
+    private string Key(NanoPendingRequest item)
+    => string.IsNullOrWhiteSpace(item.Client.Options.Instance)
+        ? item.Request.Key
+        : item.Client.Options.Instance.TrimEnd('.') + "." + item.Request.Key;
     #endregion
 
     #region TCP Socket Methods
@@ -406,7 +411,7 @@ public sealed class NanoCacheServer
                 return;
 
             // Add to DataStack
-            _clientRequests.TryAdd(new NanoWaitingRequest
+            _clientRequests.TryAdd(new NanoPendingRequest
             {
                 Client = client,
                 Request = request,

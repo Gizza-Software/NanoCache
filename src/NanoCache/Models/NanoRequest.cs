@@ -6,7 +6,7 @@ public class NanoRequest : IDisposable
     public NanoOperation Operation { get; set; }
     public string Key { get; set; }
     public byte[] Value { get; set; }
-    public NanoCacheEntryOptions Options { get; set; }
+    public DistributedCacheEntryOptions Options { get; set; }
 
     protected virtual void Dispose(bool disposing)
     {
@@ -15,7 +15,6 @@ public class NanoRequest : IDisposable
             // Free any other managed objects here.
             this.Key = null;
             this.Value = null;
-            this.Options?.Dispose();
             this.Options = null;
         }
 
@@ -34,38 +33,7 @@ public class NanoRequest : IDisposable
     }
 }
 
-public class NanoCacheEntryOptions: IDisposable
-{
-    public DateTimeOffset? AbsoluteExpiration { get; set; }
-    public TimeSpan? AbsoluteExpirationRelativeToNow { get; set; }
-    public TimeSpan? SlidingExpiration { get; set; }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            // Free any other managed objects here.
-            this.AbsoluteExpiration = null;
-            this.AbsoluteExpirationRelativeToNow = null;
-            this.SlidingExpiration = null;
-        }
-
-        // Free any unmanaged objects here.
-    }
-
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    ~NanoCacheEntryOptions()
-    {
-        Dispose(false);
-    }
-}
-
-internal class NanoWaitingRequest: IDisposable
+internal class NanoPendingRequest: IDisposable
 {
     public NanoClient Client { get; set; }
     public NanoRequest Request { get; set; }
@@ -91,7 +59,7 @@ internal class NanoWaitingRequest: IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~NanoWaitingRequest()
+    ~NanoPendingRequest()
     {
         Dispose(false);
     }

@@ -234,13 +234,16 @@ try {
     #endregion
 
     #region TCP Socket Methods
-    private NanoResponse Send(NanoOperation operation, string key, byte[] value = null, NanoCacheEntryOptions options = null)
+    private NanoResponse Send(NanoOperation operation, string key, byte[] value = null, DistributedCacheEntryOptions options = null)
     {
         return SendAsync(operation, key, value, options, default).GetAwaiter().GetResult();
     }
 
-    private Task<NanoResponse> SendAsync(NanoOperation operation, string key, byte[] value = null, NanoCacheEntryOptions options = null, CancellationToken cancellationToken = default)
+    private Task<NanoResponse> SendAsync(NanoOperation operation, string key, byte[] value = null, DistributedCacheEntryOptions options = null, CancellationToken token = default)
     {
+        // Cancellation Token
+        token.ThrowIfCancellationRequested();
+
         // Prepare Request
         var id = _identifier++;
         var req = new NanoRequest
@@ -255,13 +258,13 @@ try {
         // Add to DataStack
         var tcs = new TaskCompletionSource<NanoResponse>();
         _timeouts.TryAdd(id, DateTime.Now.AddSeconds(Connected 
-            ? _options.QueryTimeoutInSeconds 
-            : _options.QueryTimeoutInSeconds + _options.ConnectionTimeoutInSeconds));
+        ? _options.QueryTimeoutInSeconds 
+        : _options.QueryTimeoutInSeconds + _options.ConnectionTimeoutInSeconds));
         _requests.TryAdd(id, req);
         _callbacks.TryAdd(id, tcs);
 
         // Cancellation Token
-        cancellationToken.Register(() =>
+        token.Register(() =>
         {
             _timeouts.TryRemove(id, out _);
             _requests.TryRemove(id, out _);
@@ -269,7 +272,7 @@ try {
         });
 
         // Send
-        _client.SendBytes(req.PrepareObjectToSend());
+        _client.SendBytesAsync(req.PrepareObjectToSend(), token);
 
         // Return
         return tcs.Task;
@@ -279,85 +282,83 @@ try {
     #region IDistributedCache Methods
     public byte[] Get(string key)
     {
-        Authenticate();
-        if (!this.Authenticated) return [];
-
-        var response = Send(NanoOperation.Get, key);
-        if (response == null || !response.Success) return [];
-
-        return response.Value;
+        return GetAsync(key, default).GetAwaiter().GetResult();
     }
     public async Task<byte[]> GetAsync(string key, CancellationToken token = default)
     {
+        // Cancellation Token
+        token.ThrowIfCancellationRequested();
+
+        // Authentication
         Authenticate();
         if (!this.Authenticated) return [];
 
+        // Action
         var response = await SendAsync(NanoOperation.Get, key, null, null, token);
         if (response == null || !response.Success) return [];
 
+        // Return
         return response.Value;
     }
 
     public void Refresh(string key)
     {
-        Authenticate();
-        if (!this.Authenticated) return;
-
-        Send(NanoOperation.Refresh, key);
+        RefreshAsync(key, default).GetAwaiter().GetResult();
     }
     public Task RefreshAsync(string key, CancellationToken token = default)
     {
+        // Cancellation Token
+        token.ThrowIfCancellationRequested();
+
+        // Authentication
         Authenticate();
         if (!this.Authenticated) return Task.CompletedTask;
 
+        // Action
         return SendAsync(NanoOperation.Refresh, key, null, null, token);
     }
 
     public void Remove(string key)
     {
-        Authenticate();
-        if (!this.Authenticated) return;
-
-        Send(NanoOperation.Remove, key);
+        RemoveAsync(key, default).GetAwaiter().GetResult();
     }
     public Task RemoveAsync(string key, CancellationToken token = default)
     {
+        // Cancellation Token
+        token.ThrowIfCancellationRequested();
+
+        // Authentication
         Authenticate();
         if (!this.Authenticated) return Task.CompletedTask;
 
+        // Action
         return SendAsync(NanoOperation.Remove, key, null, null, token);
     }
 
     public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
     {
-        Authenticate();
-        if (!this.Authenticated) return;
-
-        var nanoOptions = new NanoCacheEntryOptions();
-        if (options != null)
-        {
-            nanoOptions.SlidingExpiration = options.SlidingExpiration;
-            nanoOptions.AbsoluteExpiration = options.AbsoluteExpiration;
-            nanoOptions.AbsoluteExpirationRelativeToNow = options.AbsoluteExpirationRelativeToNow;
-        }
-
-        Send(NanoOperation.Set, key, value, nanoOptions);
+        SetAsync(key, value, options, default).GetAwaiter().GetResult();
     }
     public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)
     {
+        // Cancellation Token
+        token.ThrowIfCancellationRequested();
+
+        // Authentication
         Authenticate();
         if (!this.Authenticated) return Task.CompletedTask;
 
-        var nanoOptions = new NanoCacheEntryOptions();
+        // Options
+        var doptions = new DistributedCacheEntryOptions();
         if (options != null)
         {
-            nanoOptions.SlidingExpiration = options.SlidingExpiration;
-            nanoOptions.AbsoluteExpiration = options.AbsoluteExpiration;
-            nanoOptions.AbsoluteExpirationRelativeToNow = options.AbsoluteExpirationRelativeToNow;
+            doptions.SlidingExpiration = options.SlidingExpiration;
+            doptions.AbsoluteExpiration = options.AbsoluteExpiration;
+            doptions.AbsoluteExpirationRelativeToNow = options.AbsoluteExpirationRelativeToNow;
         }
 
-        return SendAsync(NanoOperation.Set, key, value, nanoOptions, token);
+        // Action
+        return SendAsync(NanoOperation.Set, key, value, doptions, token);
     }
     #endregion
-
 }
