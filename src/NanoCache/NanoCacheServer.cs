@@ -53,7 +53,7 @@ public sealed class NanoCacheServer
         _listener.OnDataReceived += Server_OnDataReceived;
 
         // Query Consumer Task
-        Task.Factory.StartNew(QueryConsumer, TaskCreationOptions.LongRunning);
+        Task.Factory.StartNew(QueryConsumerAsync, TaskCreationOptions.LongRunning);
 
         // Memory Optimizer Task
         Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
@@ -83,8 +83,10 @@ public sealed class NanoCacheServer
     }
 
     #region Query Manager
-    private void QueryConsumer()
+    private async Task QueryConsumerAsync()
     {
+        await Task.CompletedTask;
+
 #if RELEASE
         try
         {
@@ -95,6 +97,7 @@ public sealed class NanoCacheServer
                 try
                 {
 #endif
+                    // TODO: Add a timeout for requests
                     using (item)
                     {
                         if (_debugMode)
@@ -140,7 +143,7 @@ public sealed class NanoCacheServer
                     // Memory Optimizer Task
                     if (DateTime.Now.Subtract(gctime).TotalMinutes > 5)
                     {
-                        Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
+                        _ = Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
                     }
 #if RELEASE
                 }
@@ -149,7 +152,9 @@ public sealed class NanoCacheServer
             }
 #if RELEASE
         }
-        catch { }
+        finally {
+            _ = Task.Factory.StartNew(QueryConsumerAsync, TaskCreationOptions.LongRunning);
+        }
 #endif
     }
 

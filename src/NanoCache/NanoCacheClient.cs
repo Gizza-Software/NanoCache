@@ -136,7 +136,11 @@ public sealed class NanoCacheClient : IDistributedCache
     #region Timeout Methods
     private async Task TimeoutActionAsync()
     {
-        while (true)
+#if RELEASE
+        try
+        {
+#endif
+            while (true)
         {
             var ids = _timeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
             foreach (var id in ids)
@@ -169,6 +173,13 @@ public sealed class NanoCacheClient : IDistributedCache
                 _ = Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
             }
         }
+#if RELEASE
+        }
+        finally
+        {
+            _ = Task.Factory.StartNew(TimeoutActionAsync, TaskCreationOptions.LongRunning);
+        }
+#endif
     }
     #endregion
 
