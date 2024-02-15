@@ -33,7 +33,7 @@ public class NanoRequest : IDisposable
     }
 }
 
-internal class NanoPendingRequest: IDisposable
+internal class NanoPendingRequest : IDisposable
 {
     public NanoClient Client { get; set; }
     public NanoRequest Request { get; set; }

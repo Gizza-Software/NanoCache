@@ -33,7 +33,7 @@ public class CacheController : ControllerBase
         var sw00 = Stopwatch.StartNew();
         for (var i = 0; i < limit; i++)
         {
-            await _appCache._distributedCache.SetObjectAsync("abcdef", new CacheData(i*1024));
+            await _appCache._distributedCache.SetObjectAsync("abcdef", new CacheData(1024));
             await _appCache._distributedCache.GetObjectAsync<CacheData>("abcdef");
         }
         sw00.Stop();
@@ -61,6 +61,8 @@ public class CacheData
 {
     public byte[] Data { get; set; }
     public string Message { get; set; }
+
+    public CacheData() { }
 
     public CacheData(int count)
     {

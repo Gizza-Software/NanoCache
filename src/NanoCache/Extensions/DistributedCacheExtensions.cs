@@ -2,7 +2,7 @@
 
 public static class DistributedCacheExtensions
 {
-    public static T GetObject<T>(this IDistributedCache cache, string key)
+    public static T GetObject<T>(this IDistributedCache cache, string key) where T : new()
     {
         byte[] data = cache.Get(key);
         if (data == null) return default;
@@ -10,7 +10,7 @@ public static class DistributedCacheExtensions
         return BinaryHelpers.Deserialize<T>(data);
     }
 
-    public static async Task<T> GetObjectAsync<T>(this IDistributedCache cache, string key)
+    public static async Task<T> GetObjectAsync<T>(this IDistributedCache cache, string key) where T : new()
     {
         byte[] data = await cache.GetAsync(key).ConfigureAwait(false);
         if (data == null) return default;

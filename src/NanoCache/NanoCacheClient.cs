@@ -4,7 +4,6 @@ public sealed class NanoCacheClient : IDistributedCache
 {
     // Session
     public bool Connected { get => _client.Connected; }
-    public bool Authenticated { get; private set; }
 
     // Identifier
     private long _identifier;
@@ -58,41 +57,21 @@ public sealed class NanoCacheClient : IDistributedCache
         _client.OnDataReceived += Client_OnDataReceived;
     }
 
-    public void Authenticate()
+    public void Connection()
     {
         // Check Connection
-        if (!Connected)
-        {
-            // Connect
-            Connect();
+        if (Connected)
+            return;
 
-            // Wait for connection
-            var timeout = DateTime.Now.AddSeconds(_options.ConnectionTimeoutInSeconds);
-            while (!Connected && DateTime.Now < timeout) Task.Delay(100).GetAwaiter().GetResult();
+        // Connect
+        Connect();
 
-            // Check Connection
-            if (!Connected) throw new InvalidOperationException("Connection timed out");
-        }
+        // Wait for connection
+        var timeout = DateTime.Now.AddSeconds(_options.ConnectionTimeoutInSeconds);
+        while (!Connected && DateTime.Now < timeout) Task.Delay(100).GetAwaiter().GetResult();
 
-        // Login
-        if (!this.Authenticated)
-        {
-            var loginModel = new NanoUserOptions
-            {
-                Username = _options.Username,
-                Password = _options.Password,
-                Instance = _options.Instance,
-                DefaultAbsoluteExpiration = _options.DefaultAbsoluteExpiration,
-                DefaultAbsoluteExpirationRelativeToNow = _options.DefaultAbsoluteExpirationRelativeToNow,
-                DefaultSlidingExpiration = _options.DefaultSlidingExpiration
-            };
-
-            var loginResponse = Send(NanoOperation.Login, "", BinaryHelpers.Serialize(loginModel));
-            // if (loginResponse == null || !loginResponse.Success)
-            // throw new InvalidOperationException("Invalid credentials or connection timed out");
-
-            this.Authenticated = loginResponse != null && loginResponse.Success;
-        }
+        // Check Connection
+        if (!Connected) throw new InvalidOperationException("Connection timed out");
     }
 
     public void Connect()
@@ -105,8 +84,6 @@ public sealed class NanoCacheClient : IDistributedCache
     {
         if (_client == null || Connected)
             _client!.Disconnect();
-
-        this.Authenticated = false;
     }
 
     public void Reconnect()
@@ -122,13 +99,11 @@ public sealed class NanoCacheClient : IDistributedCache
         Connect();
     }
 
-    DateTime gctime = DateTime.Now;
     private async Task MemoryOptimizerAsync()
     {
         while (true)
         {
             await Task.Delay(TimeSpan.FromSeconds(60));
-            gctime = DateTime.Now;
             GC.Collect();
         }
     }
@@ -140,7 +115,7 @@ public sealed class NanoCacheClient : IDistributedCache
         try
         {
 #endif
-            while (true)
+        while (true)
         {
             var ids = _timeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
             foreach (var id in ids)
@@ -166,12 +141,6 @@ public sealed class NanoCacheClient : IDistributedCache
 
             // Wait for next turn
             await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000);
-
-            // Memory Optimizer Task
-            if (DateTime.Now.Subtract(gctime).TotalMinutes > 5)
-            {
-                _ = Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
-            }
         }
 #if RELEASE
         }
@@ -186,12 +155,10 @@ public sealed class NanoCacheClient : IDistributedCache
     #region TCP Socket Events
     private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
     {
-        Authenticate();
     }
 
     private void Client_OnDisconnected(object sender, OnClientDisconnectedEventArgs e)
     {
-        this.Authenticated = false;
     }
 
     private void Client_OnDataReceived(object sender, OnClientDataReceivedEventArgs e)
@@ -202,7 +169,8 @@ public sealed class NanoCacheClient : IDistributedCache
     private void PacketReceived(byte[] bytes, string connectionId)
     {
 #if RELEASE
-try {
+        try
+        {
 #endif
         // Check Bytes
         if (bytes.Length < 2) return;
@@ -228,7 +196,7 @@ try {
         _requests.TryRemove(response.Identifier, out _);
         _callbacks.TryRemove(response.Identifier, out _);
 #if RELEASE
-} catch { }
+        } finally { }
 #endif
     }
     #endregion
@@ -257,8 +225,8 @@ try {
 
         // Add to DataStack
         var tcs = new TaskCompletionSource<NanoResponse>();
-        _timeouts.TryAdd(id, DateTime.Now.AddSeconds(Connected 
-        ? _options.QueryTimeoutInSeconds 
+        _timeouts.TryAdd(id, DateTime.Now.AddSeconds(Connected
+        ? _options.QueryTimeoutInSeconds
         : _options.QueryTimeoutInSeconds + _options.ConnectionTimeoutInSeconds));
         _requests.TryAdd(id, req);
         _callbacks.TryAdd(id, tcs);
@@ -289,9 +257,8 @@ try {
         // Cancellation Token
         token.ThrowIfCancellationRequested();
 
-        // Authentication
-        Authenticate();
-        if (!this.Authenticated) return [];
+        // Connection
+        Connection();
 
         // Action
         var response = await SendAsync(NanoOperation.Get, key, null, null, token);
@@ -299,23 +266,6 @@ try {
 
         // Return
         return response.Value;
-    }
-
-    public void Refresh(string key)
-    {
-        RefreshAsync(key, default).GetAwaiter().GetResult();
-    }
-    public Task RefreshAsync(string key, CancellationToken token = default)
-    {
-        // Cancellation Token
-        token.ThrowIfCancellationRequested();
-
-        // Authentication
-        Authenticate();
-        if (!this.Authenticated) return Task.CompletedTask;
-
-        // Action
-        return SendAsync(NanoOperation.Refresh, key, null, null, token);
     }
 
     public void Remove(string key)
@@ -327,12 +277,27 @@ try {
         // Cancellation Token
         token.ThrowIfCancellationRequested();
 
-        // Authentication
-        Authenticate();
-        if (!this.Authenticated) return Task.CompletedTask;
+        // Connection
+        Connection();
 
         // Action
         return SendAsync(NanoOperation.Remove, key, null, null, token);
+    }
+
+    public void Refresh(string key)
+    {
+        RefreshAsync(key, default).GetAwaiter().GetResult();
+    }
+    public Task RefreshAsync(string key, CancellationToken token = default)
+    {
+        // Cancellation Token
+        token.ThrowIfCancellationRequested();
+
+        // Connection
+        Connection();
+
+        // Action
+        return SendAsync(NanoOperation.Refresh, key, null, null, token);
     }
 
     public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
@@ -344,21 +309,11 @@ try {
         // Cancellation Token
         token.ThrowIfCancellationRequested();
 
-        // Authentication
-        Authenticate();
-        if (!this.Authenticated) return Task.CompletedTask;
-
-        // Options
-        var doptions = new DistributedCacheEntryOptions();
-        if (options != null)
-        {
-            doptions.SlidingExpiration = options.SlidingExpiration;
-            doptions.AbsoluteExpiration = options.AbsoluteExpiration;
-            doptions.AbsoluteExpirationRelativeToNow = options.AbsoluteExpirationRelativeToNow;
-        }
+        // Connection
+        Connection();
 
         // Action
-        return SendAsync(NanoOperation.Set, key, value, doptions, token);
+        return SendAsync(NanoOperation.Set, key, value, options, token);
     }
     #endregion
 }

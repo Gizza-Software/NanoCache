@@ -10,6 +10,6 @@ public enum NanoOperation : byte
 
     Set = 11,
     Get = 12,
-    Refresh = 13,
-    Remove = 14,
+    Remove = 13,
+    Refresh = 14,
 }

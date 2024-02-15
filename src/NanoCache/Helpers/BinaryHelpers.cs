@@ -4,11 +4,23 @@ internal static class BinaryHelpers
 {
     public static byte[] Serialize(object data)
     {
-        return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(data));
+        var ms = new MemoryStream();
+        using (var writer = new BsonWriter(ms))
+        {
+            var serializer = new JsonSerializer();
+            serializer.Serialize(writer, data);
+        }
+
+        return ms.ToArray();
     }
 
-    public static T Deserialize<T>(byte[] data)
+    public static T Deserialize<T>(byte[] data) where T : new()
     {
-        return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(data));
+        var ms = new MemoryStream(data);
+        using (var reader = new BsonReader(ms))
+        {
+            var serializer = new JsonSerializer();
+            return serializer.Deserialize<T>(reader);
+        }
     }
 }

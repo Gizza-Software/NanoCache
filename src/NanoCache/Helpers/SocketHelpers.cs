@@ -83,7 +83,7 @@ internal static class SocketHelpers
                         // Consume
                         if (consume) consumer(payload, connectionId);
 #if RELEASE
-                            } catch { }
+                            } finally { }
 #endif
                     }
                 }
@@ -97,8 +97,7 @@ internal static class SocketHelpers
         }
 
 #if RELEASE
-        }
-        catch { }
+        } finally { }
 #endif
     }
 
