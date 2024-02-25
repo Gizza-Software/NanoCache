@@ -35,6 +35,10 @@ internal static class SocketHelpers
         else if (security == SocketSecurity.CRC32) crcLength = 4;
 
         buffer.AddRange(bytes);
+        if(buffer.Count>1_024_000)
+        {
+            var a = 0;
+        }
         while (buffer.Count > 0)
         {
             var consume = false;
@@ -43,10 +47,9 @@ internal static class SocketHelpers
             var bufferCursor = buffer.IndexOfList(header);
             if (bufferLength >= minimumPackageLength)
             {
-                if (bufferCursor == 0) // SYNC Bytes
+                if (bufferCursor == 0)
                 {
                     // lenghtValue = Data Type (1) + Content (X)
-                    // lenghtValue CRC bytelarını kapsamıyor.
                     var lenghtBytes = buffer.Skip(syncLength).Take(4).ToArray();
                     var lengthValue = BitConverter.ToInt32(lenghtBytes, 0);
                     packageLength = syncLength + sizeLength + lengthValue + crcLength;
@@ -77,21 +80,16 @@ internal static class SocketHelpers
                         // Remove from Buffer
                         buffer.RemoveRange(0, packageLength);
 
-#if RELEASE
-                            try {
-#endif
                         // Consume
+                        // if (consume) Task.Run(() => consumer(payload, connectionId));
                         if (consume) consumer(payload, connectionId);
-#if RELEASE
-                            } finally { }
-#endif
                     }
                 }
                 else if (bufferCursor == -1) buffer.Clear();
                 else buffer.RemoveRange(0, bufferCursor);
             }
 
-            // Arta kalanları veri için bu methodu yeniden çalıştır
+            // Check Point
             if (!consume || buffer.Count < packageLength)
                 break;
         }

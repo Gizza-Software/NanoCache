@@ -29,12 +29,12 @@ public class CacheController : ControllerBase
         _appCache.GetFromMemoryCache();
         await _appCache.GetFromDistributedCacheAsync();
 
-
+        byte[] data = new byte[1024];
         var sw00 = Stopwatch.StartNew();
         for (var i = 0; i < limit; i++)
         {
-            await _appCache._distributedCache.SetObjectAsync("abcdef", new CacheData(1024));
-            await _appCache._distributedCache.GetObjectAsync<CacheData>("abcdef");
+            await _appCache._distributedCache.SetAsync("abcdef", data);
+            await _appCache._distributedCache.GetAsync("abcdef");
         }
         sw00.Stop();
         return this.Ok(sw00.Elapsed);

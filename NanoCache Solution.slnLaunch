@@ -4,10 +4,26 @@
     "Projects": [
       {
         "Name": "src\\NanoCache.ClientExample\\NanoCache.ClientExample.csproj",
-        "Action": "Start"
+        "Action": "Start",
+        "DebugTarget": ""
       },
       {
         "Name": "src\\NanoCache.ServerExample\\NanoCache.ServerExample.csproj",
+        "Action": "Start",
+        "DebugTarget": ""
+      }
+    ]
+  },
+  {
+    "Name": "Stress Profile",
+    "Projects": [
+      {
+        "Name": "src\\NanoCache.ServerExample\\NanoCache.ServerExample.csproj",
+        "Action": "Start",
+        "DebugTarget": ""
+      },
+      {
+        "Name": "src\\NanoCache.StressTester\\NanoCache.StressTester.csproj",
         "Action": "Start"
       }
     ]

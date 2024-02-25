@@ -1,15 +1,32 @@
-﻿namespace NanoCache;
+﻿#define IPWORKS_
+#define TCPSHARP
+
+#if IPWORKS
+using nsoftware.IPWorks;
+#elif TCPSHARP
+using TcpSharp;
+#endif
+
+namespace NanoCache;
 
 public sealed class NanoCacheClient : IDistributedCache
 {
     // Session
-    public bool Connected { get => _client.Connected; }
+#if IPWORKS
+    public bool Connected { get => _ipwclient.Connected; }
+#elif TCPSHARP
+    public bool Connected { get => _tcpclient.Connected; }
+#endif
 
     // Identifier
     private long _identifier;
 
     // TCP Socket
-    private TcpSharpSocketClient _client;
+#if IPWORKS
+    private Tcpclient _ipwclient;
+#elif TCPSHARP
+    private TcpSharpSocketClient _tcpclient;
+#endif
     private readonly List<byte> _buffer = [];
     private readonly BlockingCollection<byte[]> _packages = [];
 
@@ -44,17 +61,29 @@ public sealed class NanoCacheClient : IDistributedCache
         _options = options;
 
         // TCP Socket
-        _client = new TcpSharpSocketClient(_options.CacheServerHost, _options.CacheServerPort);
-        _client.Reconnect = _options.Reconnect;
-        _client.ReconnectDelayInSeconds = _options.ReconnectIntervalInSeconds;
-        _client.NoDelay = true;
-        _client.KeepAlive = true;
-        _client.KeepAliveTime = 900;
-        _client.KeepAliveInterval = 300;
-        _client.KeepAliveRetryCount = 5;
-        _client.OnConnected += Client_OnReadyToSend;
-        _client.OnDisconnected += Client_OnDisconnected;
-        _client.OnDataReceived += Client_OnDataReceived;
+#if IPWORKS
+        _ipwclient = new Tcpclient(NanoCacheConstants.IPWorksRuntimeKey);
+        _ipwclient.RemoteHost = _options.CacheServerHost;
+        _ipwclient.RemotePort = _options.CacheServerPort;
+        _ipwclient.Config("TcpNoDelay=true");
+        _ipwclient.Config("InBufferSize=30000000");
+        _ipwclient.OnDataIn += new Tcpclient.OnDataInHandler(Client_OnDataReceived);
+        _ipwclient.OnReadyToSend += new Tcpclient.OnReadyToSendHandler(Client_OnReadyToSend);
+        _ipwclient.OnDisconnected += new Tcpclient.OnDisconnectedHandler(Client_OnDisconnected);
+        _ipwclient.KeepAlive = true;
+#elif TCPSHARP
+        _tcpclient = new TcpSharpSocketClient(_options.CacheServerHost, _options.CacheServerPort);
+        _tcpclient.Reconnect = _options.Reconnect;
+        _tcpclient.ReconnectDelayInSeconds = _options.ReconnectIntervalInSeconds;
+        _tcpclient.NoDelay = true;
+        _tcpclient.KeepAlive = true;
+        _tcpclient.KeepAliveTime = 900;
+        _tcpclient.KeepAliveInterval = 300;
+        _tcpclient.KeepAliveRetryCount = 5;
+        _tcpclient.OnConnected += Client_OnReadyToSend;
+        _tcpclient.OnDisconnected += Client_OnDisconnected;
+        _tcpclient.OnDataReceived += Client_OnDataReceived;
+#endif
     }
 
     public void Connection()
@@ -76,14 +105,24 @@ public sealed class NanoCacheClient : IDistributedCache
 
     public void Connect()
     {
+#if IPWORKS
         if (!Connected)
-            _client.Connect();
+            _ipwclient.Connect();
+#elif TCPSHARP
+        if (!Connected)
+            _tcpclient.Connect();
+#endif
     }
 
     public void Disconnect()
     {
-        if (_client == null || Connected)
-            _client!.Disconnect();
+#if IPWORKS
+        if (_ipwclient == null || Connected)
+            _ipwclient!.Disconnect();
+#elif TCPSHARP
+        if (_tcpclient == null || Connected)
+            _tcpclient!.Disconnect();
+#endif
     }
 
     public void Reconnect()
@@ -153,6 +192,20 @@ public sealed class NanoCacheClient : IDistributedCache
     #endregion
 
     #region TCP Socket Events
+#if IPWORKS
+    private void Client_OnReadyToSend(object sender, TcpclientReadyToSendEventArgs e)
+    {
+    }
+
+    private void Client_OnDisconnected(object sender, TcpclientDisconnectedEventArgs e)
+    {
+    }
+
+    private void Client_OnDataReceived(object sender, TcpclientDataInEventArgs e)
+    {
+        SocketHelpers.CacheAndConsume(e.TextB, "CLIENT", _buffer, new Action<byte[], string>(PacketReceived));
+    }
+#elif TCPSHARP
     private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
     {
     }
@@ -165,6 +218,7 @@ public sealed class NanoCacheClient : IDistributedCache
     {
         SocketHelpers.CacheAndConsume(e.Data, "CLIENT", _buffer, new Action<byte[], string>(PacketReceived));
     }
+#endif
 
     private void PacketReceived(byte[] bytes, string connectionId)
     {
@@ -199,7 +253,7 @@ public sealed class NanoCacheClient : IDistributedCache
         } finally { }
 #endif
     }
-    #endregion
+#endregion
 
     #region TCP Socket Methods
     private NanoResponse Send(NanoOperation operation, string key, byte[] value = null, DistributedCacheEntryOptions options = null)
@@ -239,13 +293,18 @@ public sealed class NanoCacheClient : IDistributedCache
             _callbacks.TryRemove(id, out _);
         });
 
+#if IPWORKS
         // Send
-        _client.SendBytesAsync(req.PrepareObjectToSend(), token);
+        _ipwclient.SendBytes(req.PrepareObjectToSend());
+#elif TCPSHARP
+        // Send
+        _tcpclient.SendBytesAsync(req.PrepareObjectToSend(), token);
+#endif
 
         // Return
         return tcs.Task;
     }
-    #endregion
+#endregion
 
     #region IDistributedCache Methods
     public byte[] Get(string key)
