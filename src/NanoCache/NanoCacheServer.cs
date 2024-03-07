@@ -6,6 +6,7 @@ using nsoftware.IPWorks;
 #elif TCPSHARP
 using TcpSharp;
 #endif
+using NanoCache.Concurrent;
 
 namespace NanoCache;
 
@@ -21,10 +22,10 @@ public sealed class NanoCacheServer
     private readonly TcpSharpSocketServer _tcpserver;
 #endif
     private readonly ConcurrentDictionary<string, List<byte>> _buffers = [];
-    private readonly ConcurrentDictionary<string, NanoClient> _clients = [];
+    private readonly ConcurrentDictionary<string, NanoConnection> _clients = [];
 
     // Data Stack
-    private readonly BlockingCollection<NanoPendingRequest> _clientRequests = [];
+    private readonly MemoryBus<NanoPendingRequest> _requests = new();
 
     // Debugging
     private readonly bool _debugMode;
@@ -60,17 +61,17 @@ public sealed class NanoCacheServer
         // Query Consumer Task
         Task.Factory.StartNew(ConsumerAsync, TaskCreationOptions.LongRunning);
 
-        // Memory Optimizer Task
-        Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
+        // Memory Optimizer
+        new NanoCacheMemory().Start();
     }
 
     public void StartListening()
     {
 #if IPWORKS
-        if (_ipwserver == null || !_ipwserver.Listening)
+        if (_ipwserver is null || !_ipwserver.Listening)
             _ipwserver!.StartListening();
 #elif TCPSHARP
-        if (_tcpserver == null || !_tcpserver.Listening)
+        if (_tcpserver is null || !_tcpserver.Listening)
             _tcpserver!.StartListening();
 #endif
     }
@@ -78,27 +79,18 @@ public sealed class NanoCacheServer
     public void StopListening()
     {
 #if IPWORKS
-        if (_ipwserver == null || _ipwserver.Listening)
+        if (_ipwserver is null || _ipwserver.Listening)
             _ipwserver!.StopListening();
 #elif TCPSHARP
-        if (_tcpserver == null || _tcpserver.Listening)
+        if (_tcpserver is null || _tcpserver.Listening)
             _tcpserver!.StopListening();
 #endif
-    }
-
-    private async Task MemoryOptimizerAsync()
-    {
-        while (true)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(60));
-            GC.Collect();
-        }
     }
 
     #region Query Manager
     private async Task ConsumerAsync()
     {
-        foreach (var item in _clientRequests.GetConsumingEnumerable())
+        await _requests.ConsumeAsync(async (item, ct) =>
         {
 #if RELEASE
             try
@@ -115,12 +107,12 @@ public sealed class NanoCacheServer
                     Console.WriteLine("Request Key         : " + item.Request.Key);
                 }
 
-                if (item == null) continue;
-                if (item.Client == null) continue;
-                if (item.Request == null) continue;
+                if (item is null) return;
+                if (item.Client is null) return;
+                if (item.Request is null) return;
 
                 Task task = null;
-                var cts = new CancellationTokenSource();
+                using var cts = new CancellationTokenSource();
                 switch (item.Request.Operation)
                 {
                     case NanoOperation.Ping:
@@ -152,9 +144,9 @@ public sealed class NanoCacheServer
             }
 #if RELEASE
             }
-            finally { }
+            catch { }
 #endif
-        }
+        }, CancellationToken.None);
     }
 
     private Task PingAsync(NanoPendingRequest item, CancellationToken token = default)
@@ -185,7 +177,7 @@ public sealed class NanoCacheServer
     {
         // Options
         var options = new MemoryCacheEntryOptions();
-        if (item.Request.Options != null)
+        if (item.Request.Options is not null)
         {
             options.AbsoluteExpiration = item.Request.Options.AbsoluteExpiration;
             options.AbsoluteExpirationRelativeToNow = item.Request.Options.AbsoluteExpirationRelativeToNow;
@@ -307,7 +299,7 @@ public sealed class NanoCacheServer
 #elif TCPSHARP
     private void Server_OnConnected(object sender, OnServerConnectedEventArgs e)
     {
-        _clients[e.ConnectionId] = new NanoClient(e.ConnectionId);
+        _clients[e.ConnectionId] = new NanoConnection(e.ConnectionId);
     }
 
     private void Server_OnDisconnected(object sender, OnServerDisconnectedEventArgs e)
@@ -317,8 +309,11 @@ public sealed class NanoCacheServer
 
     private void Server_OnDataReceived(object sender, OnServerDataReceivedEventArgs e)
     {
-        var buffer = _buffers.GetOrAdd(e.ConnectionId, []);
-        SocketHelpers.CacheAndConsume(e.Data, e.ConnectionId, buffer, new Action<byte[], string>(PacketReceived));
+        using (e)
+        {
+            var buffer = _buffers.GetOrAdd(e.ConnectionId, []);
+            SocketHelpers.CacheAndConsume(e.ConnectionId, ref buffer, e.Data, new Action<byte[], string>(PacketReceived));
+        }
     }
 #endif
 
@@ -340,11 +335,11 @@ public sealed class NanoCacheServer
         Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
 
         var request = BinaryHelpers.Deserialize<NanoRequest>(dataBody);
-        if (request == null)
+        if (request is null)
             return;
 
         // Add to DataStack
-        _clientRequests.TryAdd(new NanoPendingRequest
+        _requests.Publish(new NanoPendingRequest
         {
             Client = client,
             Request = request,
@@ -352,7 +347,7 @@ public sealed class NanoCacheServer
         });
 #if RELEASE
         }
-        finally { }
+        catch { }
 #endif
     }
 

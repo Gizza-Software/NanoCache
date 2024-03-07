@@ -12,8 +12,10 @@ internal static class SocketExtensions
     {
         // SYNC: 2 Bytes
         var list = new List<byte>();
-        list.Add(0xF1);
-        list.Add(0xF2);
+        foreach (var sync in NanoCacheConstants.PacketHeader)
+        {
+            list.Add(sync);
+        }
 
         // Length: 4 Bytes
         var len = @this.Length + 1; // +1, SocketResponseDataType için
@@ -23,7 +25,7 @@ internal static class SocketExtensions
         list.Add(dataType);
 
         // Content
-        list.AddRange(@this.ToList());
+        list.AddRange([.. @this]);
 
         // CRC Body
         var crcBody = new List<byte>();
@@ -31,32 +33,32 @@ internal static class SocketExtensions
         crcBody.AddRange(@this);
         var crcBytes = crcBody.ToArray();
 
-        /*
         // CRC16: 2 Bytes
-        byte crc_01 = 0x00, crc_02 = 0x00;
-        CRC16.ComputeCRC16(crcBytes, ref crc_01, ref crc_02);
-        list.Add(crc_01);
-        list.Add(crc_02);
-        */
+        if (NanoCacheConstants.SocketSecurity == SocketSecurity.CRC16)
+        {
+            var crc16 = CRC32.ComputeChecksum(crcBytes);
+            list.AddRange(crc16.ToByteList());
+        }
 
-        /*
         // CRC32: 4 Bytes
-        var crc32 = CRC32.ComputeChecksum(crcBytes);
-        list.AddRange(crc32.ToByteList());
-        */
+        if (NanoCacheConstants.SocketSecurity == SocketSecurity.CRC32)
+        {
+            var crc32 = CRC32.ComputeChecksum(crcBytes);
+            list.AddRange(crc32.ToByteList());
+        }
 
         // ToArray
-        return list.ToArray();
+        return [.. list];
     }
 
     public static byte[] ToBytes(this short @this) => BitConverter.GetBytes(@this);
-    public static List<byte> ToByteList(this short @this) => @this.ToBytes().ToList();
+    public static List<byte> ToByteList(this short @this) => [.. @this.ToBytes()];
 
     public static byte[] ToBytes(this int @this) => BitConverter.GetBytes(@this);
-    public static List<byte> ToByteList(this int @this) => @this.ToBytes().ToList();
+    public static List<byte> ToByteList(this int @this) => [.. @this.ToBytes()];
 
     public static byte[] ToBytes(this uint @this) => BitConverter.GetBytes(@this);
-    public static List<byte> ToByteList(this uint @this) => @this.ToBytes().ToList();
+    public static List<byte> ToByteList(this uint @this) => [.. @this.ToBytes()];
 
     public static void AddRange<T>(this ConcurrentBag<T> @this, IEnumerable<T> toAdd)
     {

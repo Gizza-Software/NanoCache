@@ -35,7 +35,7 @@ public class NanoRequest : IDisposable
 
 internal class NanoPendingRequest : IDisposable
 {
-    public NanoClient Client { get; set; }
+    public NanoConnection Client { get; set; }
     public NanoRequest Request { get; set; }
     public string ConnectionId { get; set; }
 

@@ -3,7 +3,7 @@
 public static class CRC16
 {
     private static readonly ushort[] _crc16Table =
-    {
+    [
         0x0000, 0x1189, 0x2312, 0x329B,
         0x4624, 0x57AD, 0x6536, 0x74BF,
         0x8C48, 0x9DC1, 0xAF5A, 0xBED3,
@@ -71,7 +71,7 @@ public static class CRC16
         0xB1AB, 0xA022, 0x92B9, 0x8330,
         0x7BC7, 0x6A4E, 0x58D5, 0x495C,
         0x3DE3, 0x2C6A, 0x1EF1, 0x0F78,
-    };
+    ];
 
     public static ushort ComputeChecksum(byte[] bytes)
     {

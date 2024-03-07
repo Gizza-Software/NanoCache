@@ -1,11 +1,11 @@
 ﻿namespace NanoCache;
 
-internal class NanoClient
+internal class NanoConnection
 {
     public string ConnectionId { get; set; }
 
-    public NanoClient() { }
-    public NanoClient(string connectionId)
+    public NanoConnection() { }
+    public NanoConnection(string connectionId)
     {
         ConnectionId = connectionId;
     }

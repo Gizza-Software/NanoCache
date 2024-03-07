@@ -14,9 +14,8 @@ public class Worker : BackgroundService
         this._configuration = configuration;
 
         // Get Settings
-        var debugMode = false;
         var docker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER").ToBooleanSafe();
-        debugMode = docker
+        var debugMode = docker
             ? Environment.GetEnvironmentVariable("DEBUG_MODE").ToBooleanSafe()
             : configuration.GetSection("DebugMode").Value.ToBooleanSafe();
 

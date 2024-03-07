@@ -6,6 +6,7 @@ using nsoftware.IPWorks;
 #elif TCPSHARP
 using TcpSharp;
 #endif
+using NanoCache.Concurrent;
 
 namespace NanoCache;
 
@@ -27,16 +28,15 @@ public sealed class NanoCacheClient : IDistributedCache
 #elif TCPSHARP
     private TcpSharpSocketClient _tcpclient;
 #endif
-    private readonly List<byte> _buffer = [];
-    private readonly BlockingCollection<byte[]> _packages = [];
+    private List<byte> _buffer = [];
 
     // Distributed Cache Options
     private NanoCacheOptions _options;
 
     // Data Stack
-    private ConcurrentDictionary<long, DateTime> _timeouts = [];
-    private ConcurrentDictionary<long, NanoRequest> _requests = [];
-    private ConcurrentDictionary<long, TaskCompletionSource<NanoResponse>> _callbacks = [];
+    private readonly ConcurrentDictionary<long, DateTime> _timeouts = [];
+    private readonly ConcurrentDictionary<long, NanoRequest> _requests = [];
+    private readonly ConcurrentDictionary<long, TaskCompletionSource<NanoResponse>> _callbacks = [];
 
     [Obsolete("Do not use constructor directly instead pull IDistributedCache from DI. For this add 'builder.Services.AddNanoDistributedCache'")]
     public NanoCacheClient(IOptions<NanoCacheOptions> options) : this(options.Value)
@@ -51,8 +51,8 @@ public sealed class NanoCacheClient : IDistributedCache
         // Timeout Manager
         Task.Factory.StartNew(TimeoutActionAsync, TaskCreationOptions.LongRunning);
 
-        // Memory Optimizer Task
-        Task.Factory.StartNew(MemoryOptimizerAsync, TaskCreationOptions.LongRunning);
+        // Memory Optimizer
+        new NanoCacheMemory().Start();
     }
 
     public void Configure(NanoCacheOptions options)
@@ -117,10 +117,10 @@ public sealed class NanoCacheClient : IDistributedCache
     public void Disconnect()
     {
 #if IPWORKS
-        if (_ipwclient == null || Connected)
+        if (_ipwclient is null || Connected)
             _ipwclient!.Disconnect();
 #elif TCPSHARP
-        if (_tcpclient == null || Connected)
+        if (_tcpclient is null || Connected)
             _tcpclient!.Disconnect();
 #endif
     }
@@ -138,15 +138,6 @@ public sealed class NanoCacheClient : IDistributedCache
         Connect();
     }
 
-    private async Task MemoryOptimizerAsync()
-    {
-        while (true)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(60));
-            GC.Collect();
-        }
-    }
-
     #region Timeout Methods
     private async Task TimeoutActionAsync()
     {
@@ -154,33 +145,33 @@ public sealed class NanoCacheClient : IDistributedCache
         try
         {
 #endif
-        while (true)
-        {
-            var ids = _timeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
-            foreach (var id in ids)
+            while (true)
             {
-                // Set Response
-                if (_callbacks.TryGetValue(id, out var callback))
-                    callback.TrySetResult(new NanoResponse
-                    {
-                        Success = false,
-                        Identifier = id,
-                        Operation = NanoOperation.Timeout,
-                        Value = []
-                    });
+                var ids = _timeouts.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList();
+                foreach (var id in ids)
+                {
+                    // Set Response
+                    if (_callbacks.TryGetValue(id, out var callback))
+                        callback.TrySetResult(new NanoResponse
+                        {
+                            Success = false,
+                            Identifier = id,
+                            Operation = NanoOperation.Timeout,
+                            Value = []
+                        });
 
-                // Remove Items
-                _timeouts.TryRemove(id, out _);
-                _requests.TryRemove(id, out _);
-                _callbacks.TryRemove(id, out _);
+                    // Remove Items
+                    _timeouts.TryRemove(id, out _);
+                    _requests.TryRemove(id, out _);
+                    _callbacks.TryRemove(id, out _);
+                }
+
+                // Disconnected?
+                // if (_options.Reconnect) Reconnect();
+
+                // Wait for next turn
+                await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000);
             }
-
-            // Disconnected?
-            // if (_options.Reconnect) Reconnect();
-
-            // Wait for next turn
-            await Task.Delay(_options.QueryTimeoutInSeconds < 5 ? 100 : 1000);
-        }
 #if RELEASE
         }
         finally
@@ -208,15 +199,20 @@ public sealed class NanoCacheClient : IDistributedCache
 #elif TCPSHARP
     private void Client_OnReadyToSend(object sender, OnClientConnectedEventArgs e)
     {
+        // ..
     }
 
     private void Client_OnDisconnected(object sender, OnClientDisconnectedEventArgs e)
     {
+        // ..
     }
 
     private void Client_OnDataReceived(object sender, OnClientDataReceivedEventArgs e)
     {
-        SocketHelpers.CacheAndConsume(e.Data, "CLIENT", _buffer, new Action<byte[], string>(PacketReceived));
+        using (e)
+        {
+            SocketHelpers.CacheAndConsume("CLIENT", ref _buffer, e.Data, new Action<byte[], string>(PacketReceived));
+        }
     }
 #endif
 
@@ -226,34 +222,35 @@ public sealed class NanoCacheClient : IDistributedCache
         try
         {
 #endif
-        // Check Bytes
-        if (bytes.Length < 2) return;
-        if (bytes[0] < 1 || bytes[0] > 14) return;
+            // Check Bytes
+            if (bytes.Length < 2) return;
+            if (bytes[0] < 1 || bytes[0] > 14) return;
 
-        // Parse Bytes
-        var dataType = (NanoOperation)bytes[0];
-        var dataBody = new byte[bytes.Length - 1];
-        Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
-        bytes = null;
+            // Parse Bytes
+            var dataType = (NanoOperation)bytes[0];
+            var dataBody = new byte[bytes.Length - 1];
+            Array.Copy(bytes, 1, dataBody, 0, bytes.Length - 1);
+            bytes = null;
 
-        // Get Data
-        var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
-        if (response == null) return;
-        dataBody = null;
+            // Get Data
+            var response = BinaryHelpers.Deserialize<NanoResponse>(dataBody);
+            if (response is null) return;
+            dataBody = null;
 
-        // Set Value
-        if (_callbacks.TryGetValue(response.Identifier, out var callback))
-            callback.TrySetResult(response);
+            // Set Value
+            if (_callbacks.TryGetValue(response.Identifier, out var callback))
+                callback.TrySetResult(response);
 
-        // Remove Items
-        _timeouts.TryRemove(response.Identifier, out _);
-        _requests.TryRemove(response.Identifier, out _);
-        _callbacks.TryRemove(response.Identifier, out _);
+            // Remove Items
+            _timeouts.TryRemove(response.Identifier, out _);
+            _requests.TryRemove(response.Identifier, out _);
+            _callbacks.TryRemove(response.Identifier, out _);
 #if RELEASE
-        } finally { }
+        }
+        catch { }
 #endif
     }
-#endregion
+    #endregion
 
     #region TCP Socket Methods
     private NanoResponse Send(NanoOperation operation, string key, byte[] value = null, DistributedCacheEntryOptions options = null)
@@ -304,7 +301,7 @@ public sealed class NanoCacheClient : IDistributedCache
         // Return
         return tcs.Task;
     }
-#endregion
+    #endregion
 
     #region IDistributedCache Methods
     public byte[] Get(string key)
@@ -321,7 +318,7 @@ public sealed class NanoCacheClient : IDistributedCache
 
         // Action
         var response = await SendAsync(NanoOperation.Get, key, null, null, token);
-        if (response == null || !response.Success) return [];
+        if (response is null || !response.Success) return [];
 
         // Return
         return response.Value;
