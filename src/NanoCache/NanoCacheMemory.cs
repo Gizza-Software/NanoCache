@@ -29,7 +29,7 @@ public class NanoCacheMemory
         {
             // Restart
             if (!_ct.IsCancellationRequested)
-                this.Start(ct);
+                this.Start();
         }
 #endif
     }

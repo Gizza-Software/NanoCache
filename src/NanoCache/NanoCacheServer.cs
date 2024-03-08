@@ -6,7 +6,6 @@ using nsoftware.IPWorks;
 #elif TCPSHARP
 using TcpSharp;
 #endif
-using NanoCache.Concurrent;
 
 namespace NanoCache;
 
@@ -24,8 +23,13 @@ public sealed class NanoCacheServer
     private readonly ConcurrentDictionary<string, List<byte>> _buffers = [];
     private readonly ConcurrentDictionary<string, NanoConnection> _clients = [];
 
-    // Data Stack
-    private readonly MemoryBus<NanoPendingRequest> _requests = new();
+    // Bus
+#if IPWORKS
+    private readonly IMemoryBus<TcpserverDataInEventArgs> _dataBus = new MemoryBus<TcpserverDataInEventArgs>();
+#elif TCPSHARP
+    private readonly IMemoryBus<OnServerDataReceivedEventArgs> _dataBus = new MemoryBus<OnServerDataReceivedEventArgs>();
+#endif
+    private readonly IMemoryBus<NanoPendingRequest> _requestBus = new MemoryBus<NanoPendingRequest>();
 
     // Debugging
     private readonly bool _debugMode;
@@ -58,8 +62,9 @@ public sealed class NanoCacheServer
         _tcpserver.OnDataReceived += Server_OnDataReceived;
 #endif
 
-        // Query Consumer Task
-        Task.Factory.StartNew(ConsumerAsync, TaskCreationOptions.LongRunning);
+        // Start Tasks
+        Task.Factory.StartNew(DataConsumerAsync, TaskCreationOptions.LongRunning);
+        Task.Factory.StartNew(RequestConsumerAsync, TaskCreationOptions.LongRunning);
 
         // Memory Optimizer
         new NanoCacheMemory().Start();
@@ -88,9 +93,28 @@ public sealed class NanoCacheServer
     }
 
     #region Query Manager
-    private async Task ConsumerAsync()
+    private async Task DataConsumerAsync()
     {
-        await _requests.ConsumeAsync(async (item, ct) =>
+#if IPWORKS
+        await _dataBus.ConsumeAsync(async (e, ct) =>
+        {
+            var buffer = _buffers.GetOrAdd(e.ConnectionId, []);
+            SocketHelpers.CacheAndConsume(e.ConnectionId, buffer, e.TextB, new Action<byte[], string>(PacketReceived));
+            await Task.CompletedTask;
+        }, CancellationToken.None);
+#elif TCPSHARP
+        await _dataBus.ConsumeAsync(async (e, ct) =>
+        {
+            var buffer = _buffers.GetOrAdd(e.ConnectionId, []);
+            SocketHelpers.CacheAndConsume(e.ConnectionId, ref buffer, e.Data, new Action<byte[], string>(PacketReceived));
+            await Task.CompletedTask;
+        }, CancellationToken.None);
+#endif
+    }
+
+    private async Task RequestConsumerAsync()
+    {
+        await _requestBus.ConsumeAsync(async (item, ct) =>
         {
 #if RELEASE
             try
@@ -293,8 +317,7 @@ public sealed class NanoCacheServer
 
     private void Server_OnDataReceived(object sender, TcpserverDataInEventArgs e)
     {
-        var buffer = _buffers.GetOrAdd(e.ConnectionId, []);
-        SocketHelpers.CacheAndConsume(e.TextB, e.ConnectionId, buffer, new Action<byte[], string>(PacketReceived));
+        _dataBus.Publish(e);
     }
 #elif TCPSHARP
     private void Server_OnConnected(object sender, OnServerConnectedEventArgs e)
@@ -309,11 +332,7 @@ public sealed class NanoCacheServer
 
     private void Server_OnDataReceived(object sender, OnServerDataReceivedEventArgs e)
     {
-        using (e)
-        {
-            var buffer = _buffers.GetOrAdd(e.ConnectionId, []);
-            SocketHelpers.CacheAndConsume(e.ConnectionId, ref buffer, e.Data, new Action<byte[], string>(PacketReceived));
-        }
+        _dataBus.Publish(e);
     }
 #endif
 
@@ -339,7 +358,7 @@ public sealed class NanoCacheServer
             return;
 
         // Add to DataStack
-        _requests.Publish(new NanoPendingRequest
+        _requestBus.Publish(new NanoPendingRequest
         {
             Client = client,
             Request = request,

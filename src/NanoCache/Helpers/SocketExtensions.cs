@@ -12,13 +12,10 @@ internal static class SocketExtensions
     {
         // SYNC: 2 Bytes
         var list = new List<byte>();
-        foreach (var sync in NanoCacheConstants.PacketHeader)
-        {
-            list.Add(sync);
-        }
+        list.AddRange(NanoCacheConstants.PacketHeader);
 
         // Length: 4 Bytes
-        var len = @this.Length + 1; // +1, SocketResponseDataType için
+        var len = @this.Length + 1; // +1, DataType için
         list.AddRange(len.ToByteList());
 
         // Data Type: 1 Byte

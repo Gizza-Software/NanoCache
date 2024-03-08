@@ -3,6 +3,7 @@ global using Microsoft.Extensions.Caching.Memory;
 global using Microsoft.Extensions.DependencyInjection;
 global using Microsoft.Extensions.DependencyInjection.Extensions;
 global using Microsoft.Extensions.Options;
+global using NanoCache.Concurrent;
 global using Newtonsoft.Json;
 global using Newtonsoft.Json.Bson;
 global using System;
