@@ -4,6 +4,7 @@
 #if IPWORKS
 using nsoftware.IPWorks;
 #elif TCPSHARP
+using System.Globalization;
 using TcpSharp;
 #endif
 
@@ -129,6 +130,25 @@ public sealed class NanoCacheServer
                     Console.WriteLine("Request Identifier  : " + item.Request.Identifier);
                     Console.WriteLine("Request Operation   : " + item.Request.Operation.ToString());
                     Console.WriteLine("Request Key         : " + item.Request.Key);
+                }
+                else
+                {
+                    var summary = false;
+                    var count = item.Client.RequestCounter();
+                    if (count >= 1000000) summary = item.Client.RequestCount % 1000000 == 0;
+                    else if (count >= 100000) summary = count % 100000 == 0;
+                    else if (count >= 10000) summary = count % 10000 == 0;
+                    else if (count >= 1000) summary = count % 1000 == 0;
+                    else if (count >= 100) summary = count % 100 == 0;
+                    else if (count >= 10) summary = count % 10 == 0;
+                    else if (count >= 1) summary = count == 1;
+                    if (summary)
+                    {
+                        Console.WriteLine("----------------------------------------");
+                        Console.WriteLine("DateTime.Now : " + DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"));
+                        Console.WriteLine("Connection Id: " + item.Client.ConnectionId);
+                        Console.WriteLine("Request Count: " + item.Client.RequestCount.ToString("N0"));
+                    }
                 }
 
                 if (item is null) return;

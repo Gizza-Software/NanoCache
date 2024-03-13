@@ -8,10 +8,10 @@
 	<PropertyGroup>
 		<PackageId>NanoCache</PackageId>
 		<Authors>Burak Öner</Authors>
-		<Version>2.2.0</Version>
-		<FileVersion>2.2.0</FileVersion>
-		<PackageVersion>2.2.0</PackageVersion>
-		<AssemblyVersion>2.2.0</AssemblyVersion>
+		<Version>2.2.1</Version>
+		<FileVersion>2.2.1</FileVersion>
+		<PackageVersion>2.2.1</PackageVersion>
+		<AssemblyVersion>2.2.1</AssemblyVersion>
 		<Description>Blazing Fast Distributed Cache Solution, including Cache Server and Client with dependency injections. Successfully tested up to 15K requests per second with a single client and up to 200K requests per second with multiple clients.</Description>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
 		<PackageTags>NanoCode;NanoCache;Memory;Distributed;Cache;Server;Client;TCP;Socket;Dependency Injection</PackageTags>
@@ -19,7 +19,7 @@
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<NeutralLanguage>en</NeutralLanguage>
 		<PackageReleaseNotes>
-			Version 2.2.0 - 08 Mar 2024
+			Version 2.2.1 - 13 Mar 2024
 		</PackageReleaseNotes>
 		<PackageIconUrl />
 		<PackageProjectUrl>https://github.com/burakoner/NanoCache</PackageProjectUrl>
@@ -29,7 +29,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="8.0.0" />
-		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
 		<PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 		<PackageReference Include="System.Threading.Channels" Version="8.0.0" />
