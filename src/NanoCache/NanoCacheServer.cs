@@ -4,7 +4,6 @@
 #if IPWORKS
 using nsoftware.IPWorks;
 #elif TCPSHARP
-using System.Globalization;
 using TcpSharp;
 #endif
 
@@ -144,10 +143,15 @@ public sealed class NanoCacheServer
                     else if (count >= 1) summary = count == 1;
                     if (summary)
                     {
-                        Console.WriteLine("----------------------------------------");
-                        Console.WriteLine("DateTime.Now : " + DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"));
+                        Console.WriteLine("----------------------------------");
                         Console.WriteLine("Connection Id: " + item.Client.ConnectionId);
+                        Console.WriteLine("Connection At: " + item.Client.ConnectionAt.ToString("dd.MM.yyyy HH:mm:ss"));
+                        Console.WriteLine("DateTime.Now : " + DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss"));
                         Console.WriteLine("Request Count: " + item.Client.RequestCount.ToString("N0"));
+                        var rpm = item.Client.RequestCount / (DateTime.Now - item.Client.ConnectionAt).TotalMinutes;
+                        var rps = item.Client.RequestCount / (DateTime.Now - item.Client.ConnectionAt).TotalSeconds;
+                        Console.WriteLine("Request / Min: " + rpm.ToString("0.0000"));
+                        Console.WriteLine("Request / Sec: " + rps.ToString("0.0000"));
                     }
                 }
 
@@ -155,36 +159,32 @@ public sealed class NanoCacheServer
                 if (item.Client is null) return;
                 if (item.Request is null) return;
 
-                Task task = null;
-                using var cts = new CancellationTokenSource();
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using var linkedTokens = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, ct);
                 switch (item.Request.Operation)
                 {
                     case NanoOperation.Ping:
-                        task = PingAsync(item, cts.Token);
+                        await PingAsync(item, linkedTokens.Token);
                         break;
                     case NanoOperation.Login:
-                        task = LoginAsync(item, cts.Token);
+                        await LoginAsync(item, linkedTokens.Token);
                         break;
                     case NanoOperation.Logout:
-                        task = LogoutAsync(item, cts.Token);
+                        await LogoutAsync(item, linkedTokens.Token);
                         break;
                     case NanoOperation.Set:
-                        task = SetAsync(item, cts.Token);
+                        await SetAsync(item, linkedTokens.Token);
                         break;
                     case NanoOperation.Get:
-                        task = GetAsync(item, cts.Token);
+                        await GetAsync(item, linkedTokens.Token);
                         break;
                     case NanoOperation.Refresh:
-                        task = RefreshAsync(item, cts.Token);
+                        await RefreshAsync(item, linkedTokens.Token);
                         break;
                     case NanoOperation.Remove:
-                        task = RemoveAsync(item, cts.Token);
+                        await RemoveAsync(item, linkedTokens.Token);
                         break;
                 }
-
-                var timeout = Task.Delay(5000, cts.Token);
-                var winner = await Task.WhenAny(task, timeout);
-                if (winner == timeout) cts.Cancel();
             }
 #if RELEASE
             }
